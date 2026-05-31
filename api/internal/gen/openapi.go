@@ -78,6 +78,12 @@ type CreateApiKeyResponse struct {
 	Secret *string `json:"secret,omitempty"`
 }
 
+// EmotiveTagMeta defines model for EmotiveTagMeta.
+type EmotiveTagMeta struct {
+	Label *string `json:"label,omitempty"`
+	Tag   *string `json:"tag,omitempty"`
+}
+
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
 	Status string `json:"status"`
@@ -115,6 +121,20 @@ type UsageEvent struct {
 type UsageListResponse struct {
 	Items *[]UsageEvent `json:"items,omitempty"`
 	Total *int          `json:"total,omitempty"`
+}
+
+// VoiceMeta defines model for VoiceMeta.
+type VoiceMeta struct {
+	Hint  *string `json:"hint,omitempty"`
+	Id    *string `json:"id,omitempty"`
+	Label *string `json:"label,omitempty"`
+}
+
+// VoicesMetaResponse defines model for VoicesMetaResponse.
+type VoicesMetaResponse struct {
+	EmotiveTags *[]EmotiveTagMeta `json:"emotiveTags,omitempty"`
+	Notes       *string           `json:"notes,omitempty"`
+	Voices      *[]VoiceMeta      `json:"voices,omitempty"`
 }
 
 // WalletResponse defines model for WalletResponse.
@@ -164,9 +184,15 @@ type ServerInterface interface {
 	// Login with username and password
 	// (POST /v1/auth/login)
 	LoginUser(w http.ResponseWriter, r *http.Request)
+	// Log out (clear session cookie)
+	// (POST /v1/auth/logout)
+	LogoutUser(w http.ResponseWriter, r *http.Request)
 	// Register a new user
 	// (POST /v1/auth/register)
 	RegisterUser(w http.ResponseWriter, r *http.Request)
+	// Voices and emotive tags for the demo UI
+	// (GET /v1/meta/voices)
+	GetMetaVoices(w http.ResponseWriter, r *http.Request)
 	// Async TTS job
 	// (POST /v1/tts/async)
 	CreateAsyncTTS(w http.ResponseWriter, r *http.Request)
@@ -224,9 +250,21 @@ func (_ Unimplemented) LoginUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Log out (clear session cookie)
+// (POST /v1/auth/logout)
+func (_ Unimplemented) LogoutUser(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Register a new user
 // (POST /v1/auth/register)
 func (_ Unimplemented) RegisterUser(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Voices and emotive tags for the demo UI
+// (GET /v1/meta/voices)
+func (_ Unimplemented) GetMetaVoices(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -380,11 +418,45 @@ func (siw *ServerInterfaceWrapper) LoginUser(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// LogoutUser operation middleware
+func (siw *ServerInterfaceWrapper) LogoutUser(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LogoutUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // RegisterUser operation middleware
 func (siw *ServerInterfaceWrapper) RegisterUser(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RegisterUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMetaVoices operation middleware
+func (siw *ServerInterfaceWrapper) GetMetaVoices(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMetaVoices(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -706,7 +778,13 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/v1/auth/login", wrapper.LoginUser)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/v1/auth/logout", wrapper.LogoutUser)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/v1/auth/register", wrapper.RegisterUser)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/v1/meta/voices", wrapper.GetMetaVoices)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/v1/tts/async", wrapper.CreateAsyncTTS)
@@ -736,37 +814,39 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"x/PHmBwAAA==",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

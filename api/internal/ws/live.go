@@ -23,6 +23,7 @@ type inbound struct {
 	Type  string `json:"type"`
 	Text  string `json:"text"`
 	Final bool   `json:"final"`
+	Voice string `json:"voice,omitempty"`
 }
 
 type control struct {
@@ -91,6 +92,7 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var firstByte bool
 	start := time.Now()
 	var audioSeconds float64
+	sessionVoice := "tara"
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -146,8 +148,10 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal(msg, &in); err != nil || in.Type != "text" {
 			continue
 		}
-		voice := "tara"
-		if err := live.SendText(requestID, in.Text, voice, in.Final); err != nil {
+		if in.Voice != "" {
+			sessionVoice = in.Voice
+		}
+		if err := live.SendText(requestID, in.Text, sessionVoice, in.Final); err != nil {
 			_ = conn.WriteJSON(control{Type: "error", Error: err.Error()})
 			break
 		}

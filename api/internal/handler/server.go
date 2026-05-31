@@ -49,10 +49,16 @@ func (s *Server) GetHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) writeAuthSession(w http.ResponseWriter, code int, u auth.User, apiKey string) {
+	auth.SetAuthCookie(w, apiKey)
 	id := openapi_types.UUID(u.ID)
 	writeJSON(w, code, gen.AuthSessionResponse{
 		Id: id, Username: u.Username, ApiKey: apiKey,
 	})
+}
+
+func (s *Server) LogoutUser(w http.ResponseWriter, r *http.Request) {
+	auth.ClearAuthCookie(w)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) RegisterUser(w http.ResponseWriter, r *http.Request) {

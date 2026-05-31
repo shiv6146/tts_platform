@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,9 +23,10 @@ func UserFromContext(ctx context.Context) (User, bool) {
 
 // Paths served by the OpenAPI mux behind BearerMiddleware but declared public in openapi.yaml.
 var publicPaths = map[string]struct{}{
-	"/health":           {},
-	"/v1/auth/register": {},
-	"/v1/auth/login":    {},
+	"/health":            {},
+	"/v1/auth/register":  {},
+	"/v1/auth/login":     {},
+	"/v1/auth/logout":    {},
 }
 
 func BearerMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
@@ -36,12 +36,11 @@ func BearerMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			h := r.Header.Get("Authorization")
-			if h == "" || !strings.HasPrefix(h, "Bearer ") {
+			token := TokenFromRequest(r)
+			if token == "" {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
-			token := strings.TrimPrefix(h, "Bearer ")
 			u, err := ResolveAPIKey(r.Context(), pool, token)
 			if err != nil {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)

@@ -27,6 +27,7 @@ import (
 	"github.com/tts-platform/api/internal/handler"
 	"github.com/tts-platform/api/internal/metrics"
 	"github.com/tts-platform/api/internal/ratelimit"
+	"github.com/tts-platform/api/internal/ui"
 	"github.com/tts-platform/api/internal/ws"
 )
 
@@ -102,12 +103,15 @@ func main() {
 	router.Get("/livez", srv.GetHealth)
 	router.Post("/v1/auth/register", srv.RegisterUser)
 	router.Post("/v1/auth/login", srv.LoginUser)
+	router.Post("/v1/auth/logout", srv.LogoutUser)
 
 	router.Group(func(pr chi.Router) {
 		pr.Use(auth.BearerMiddleware(pool))
 		pr.Use(rateLimitMiddleware(srv.Limiter))
 		pr.Mount("/", gen.HandlerFromMux(srv, pr))
 	})
+
+	router.NotFound(ui.Handler().ServeHTTP)
 
 	addr := ":" + cfg.APIPort
 	httpSrv := &http.Server{Addr: addr, Handler: router}

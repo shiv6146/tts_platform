@@ -63,6 +63,25 @@ paths:
                 $ref: "#/components/schemas/AuthSessionResponse"
         "401":
           description: Invalid credentials
+  /v1/auth/logout:
+    post:
+      operationId: logoutUser
+      security: []
+      summary: Log out (clear session cookie)
+      responses:
+        "204":
+          description: No content
+  /v1/meta/voices:
+    get:
+      operationId: getMetaVoices
+      summary: Voices and emotive tags for the demo UI
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoicesMetaResponse"
   /v1/auth/api-keys:
     post:
       operationId: createApiKey
@@ -204,9 +223,9 @@ paths:
       operationId: liveTTSWebSocket
       summary: WebSocket live TTS (upgrade)
       description: |
-        Upgrade to WebSocket. Send JSON `{"type":"text","text":"...","final":true}`.
+        Upgrade to WebSocket (same-origin cookie `tts_token` or Bearer). Send JSON
+        `{"type":"text","text":"...","final":true,"voice":"tara"}`.
         Receive binary PCM s16le 24kHz and JSON control (`ready`, `metadata`, `insufficient_balance`, `done`).
-        Requires `Authorization: Bearer sk-...` on the upgrade request.
       responses:
         "101":
           description: Switching Protocols
@@ -267,6 +286,35 @@ components:
         password:
           type: string
           format: password
+    VoicesMetaResponse:
+      type: object
+      properties:
+        voices:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoiceMeta"
+        emotiveTags:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmotiveTagMeta"
+        notes:
+          type: string
+    VoiceMeta:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        hint:
+          type: string
+    EmotiveTagMeta:
+      type: object
+      properties:
+        tag:
+          type: string
+        label:
+          type: string
     AuthSessionResponse:
       type: object
       required: [id, username, apiKey]
