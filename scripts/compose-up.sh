@@ -73,12 +73,21 @@ echo "COMPOSE_FILE=$COMPOSE_FILE"
 echo "Inference backend: $BACKEND"
 
 if [[ "$BACKEND" == "vllm" ]]; then
-  docker compose stop llama-cpp-server model-init llama-lb 2>/dev/null || true
-  docker compose rm -f llama-cpp-server model-init llama-lb 2>/dev/null || true
+  # Tear down llama sidecars by name (not in the vLLM compose file) to free GPU/port.
+  for n in $(docker ps -aq --filter "name=tts_platform-llama-cpp-server" --filter "name=tts_platform-llama-lb" --filter "name=tts_platform-model-init"); do
+    docker rm -f "$n" 2>/dev/null || true
+  done
 fi
 
 LLAMACPP_REPLICAS="${LLAMACPP_REPLICAS:-1}"
-INFERENCE_REPLICAS="${INFERENCE_REPLICAS:-3}"
+# vLLM does its own continuous batching and the gpu compose publishes host :50051,
+# so it runs as a single replica (extra replicas triple model VRAM and conflict on
+# the port). llama.cpp uses multiple SNAC replicas for decode parallelism.
+if [[ "$BACKEND" == "vllm" ]]; then
+  INFERENCE_REPLICAS="${INFERENCE_REPLICAS_VLLM:-1}"
+else
+  INFERENCE_REPLICAS="${INFERENCE_REPLICAS:-3}"
+fi
 
 # llama.cpp shares --ctx-size across --parallel slots. Each request needs its own
 # per-slot budget (LLAMACPP_SLOT_TOKENS, ~82 tokens/s audio) or generation is cut
@@ -97,6 +106,7 @@ export LLAMACPP_PARALLEL
 
 UP_ARGS=(up -d)
 [[ "$BUILD" == "1" ]] && UP_ARGS=(up -d --build)
+[[ "$BACKEND" == "vllm" ]] && UP_ARGS+=(--remove-orphans)
 
 if [[ "$BACKEND" == "llamacpp" ]]; then
   echo "llama-cpp-server replicas: $LLAMACPP_REPLICAS"
