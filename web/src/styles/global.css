@@ -271,3 +271,12 @@ audio {
   flex: 1;
   min-width: 120px;
 }
+
+.mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.usage-table .muted {
+  font-size: 0.75rem;
+}

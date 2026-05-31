@@ -74,6 +74,7 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
         if (done) break;
         if (value?.length) player.enqueue(value);
       }
+      player.flush();
       setStatus("Stream complete");
       onDone();
     } catch (e) {

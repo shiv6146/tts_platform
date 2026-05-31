@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -151,9 +152,12 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if in.Voice != "" {
 			sessionVoice = in.Voice
 		}
+		if strings.TrimSpace(in.Text) == "" {
+			continue
+		}
 		if err := live.SendText(requestID, in.Text, sessionVoice, in.Final); err != nil {
 			_ = conn.WriteJSON(control{Type: "error", Error: err.Error()})
-			break
+			continue
 		}
 		if time.Since(lastRefresh) >= h.RefreshBal {
 			snap, _ = h.Wallets.Refresh(r.Context(), u.ID)

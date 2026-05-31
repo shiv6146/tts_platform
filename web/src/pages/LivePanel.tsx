@@ -24,7 +24,10 @@ export function LivePanel({ voice, onDone }: Props) {
   const playerRef = useRef<PCMStreamPlayer | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sentIndexRef = useRef(0);
+  const inputRef = useRef(input);
   const voiceRef = useRef(voice);
+
+  inputRef.current = input;
 
   useEffect(() => {
     voiceRef.current = voice;
@@ -50,7 +53,7 @@ export function LivePanel({ voice, onDone }: Props) {
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     playerRef.current?.stop();
-    playerRef.current = new PCMStreamPlayer();
+    playerRef.current = new PCMStreamPlayer(60);
     sentIndexRef.current = 0;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${proto}//${window.location.host}/v1/tts/live`);
@@ -61,9 +64,13 @@ export function LivePanel({ voice, onDone }: Props) {
       setConnected(true);
       appendLog("Connected");
     };
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       setConnected(false);
-      appendLog("Disconnected");
+      if (ev.code !== 1000 && ev.reason) {
+        appendLog(`Disconnected: ${ev.reason}`);
+      } else {
+        appendLog("Disconnected");
+      }
     };
     ws.onerror = () => appendLog("WebSocket error");
     ws.onmessage = (ev) => {
@@ -95,16 +102,24 @@ export function LivePanel({ voice, onDone }: Props) {
 
   const disconnect = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    const pending = input.slice(sentIndexRef.current).trim();
+    const pending = inputRef.current.slice(sentIndexRef.current).trim();
     if (pending) sendPhrase(pending);
-    wsRef.current?.close();
+    wsRef.current?.close(1000);
     wsRef.current = null;
     playerRef.current?.stop();
     playerRef.current = null;
     setConnected(false);
-  }, [input, sendPhrase]);
+  }, [sendPhrase]);
 
-  useEffect(() => () => disconnect(), [disconnect]);
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      wsRef.current?.close(1000);
+      wsRef.current = null;
+      playerRef.current?.stop();
+      playerRef.current = null;
+    };
+  }, []);
 
   function handleChange(value: string) {
     setInput(value);
