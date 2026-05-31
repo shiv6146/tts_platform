@@ -13,6 +13,6 @@ __pycache__/
 .pytest_cache/
 api/internal/gen/
 gen/
-*.pb.go
-*_grpc.pb.go
+# Go protobuf (api/grpc generated — committed for Docker builds)
+# *.pb.go
 inference/tts/v1/
