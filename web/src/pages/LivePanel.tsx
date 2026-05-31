@@ -53,7 +53,7 @@ export function LivePanel({ voice, onDone }: Props) {
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
     playerRef.current?.stop();
-    playerRef.current = new PCMStreamPlayer(60);
+    playerRef.current = new PCMStreamPlayer();
     sentIndexRef.current = 0;
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${proto}//${window.location.host}/v1/tts/live`);

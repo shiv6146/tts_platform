@@ -32,7 +32,7 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
 
   function stop() {
     abortRef.current?.abort();
-    playerRef.current?.stop();
+    void playerRef.current?.stop();
     playerRef.current = null;
     setLoading(false);
     setStatus("Stopped");

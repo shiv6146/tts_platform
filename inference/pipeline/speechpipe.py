@@ -199,17 +199,11 @@ def tokens_decoder_sync(syn_token_gen):
     thread = threading.Thread(target=run_async, daemon=True)
     thread.start()
 
-    buffer_size = 5
-    audio_buffer = []
+    # Yield each SNAC frame as soon as it is ready. Batching (e.g. 5 chunks) caused
+    # ~400ms bursts then silence — audible stutter in stream/live playback.
     while True:
         audio = audio_queue.get()
         if audio is None:
             break
-        audio_buffer.append(audio)
-        if len(audio_buffer) >= buffer_size:
-            for chunk in audio_buffer:
-                yield chunk
-            audio_buffer = []
-    for chunk in audio_buffer:
-        yield chunk
+        yield audio
     thread.join(timeout=30)
