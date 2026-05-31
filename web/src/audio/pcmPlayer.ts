@@ -4,7 +4,8 @@
 
 const SAMPLE_RATE = 24000;
 const RING_SECONDS = 45;
-const DEFAULT_START_BUFFER_SEC = 0.25;
+/** Prebuffer before starting playback; keep low when inference RTF < 1 (e.g. L4). */
+const DEFAULT_START_BUFFER_SEC = 0.12;
 
 const WORKLET_SRC = `
 class PCMRingPlayer extends AudioWorkletProcessor {

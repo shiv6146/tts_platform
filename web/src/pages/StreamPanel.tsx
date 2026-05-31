@@ -43,7 +43,7 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
   async function stream() {
     if (!voice || !text.trim()) return;
     stop();
-    const player = new PCMStreamPlayer(0.2);
+    const player = new PCMStreamPlayer();
     playerRef.current = player;
     const ac = new AbortController();
     abortRef.current = ac;

@@ -31,8 +31,15 @@ def _engine_kwargs() -> dict:
     if os.environ.get("VLLM_MAX_MODEL_LEN"):
         kw["max_model_len"] = int(os.environ["VLLM_MAX_MODEL_LEN"])
     elif device != "cpu" and torch.cuda.is_available():
-        # Model config defaults to 131k context; T4 cannot allocate that KV cache.
-        kw["max_model_len"] = 8192
+        # Model config defaults to 131k; cap KV cache by VRAM (T4 16GB vs L4/A10 24GB+).
+        vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+        if vram_gb < 18:
+            kw["max_model_len"] = 8192
+        elif vram_gb < 40:
+            kw["max_model_len"] = 16384
+        else:
+            kw["max_model_len"] = 32768
+        log.info("vLLM max_model_len=%s (%.1fGB VRAM)", kw["max_model_len"], vram_gb)
     return kw
 
 

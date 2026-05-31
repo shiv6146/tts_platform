@@ -32,11 +32,28 @@ chmod +x scripts/e2e_smoke.sh
 ./scripts/e2e_smoke.sh
 ```
 
+## GPU notes
+
+| GPU | Typical settings |
+|-----|------------------|
+| T4 (16GB) | `VLLM_GPU_MEMORY_UTILIZATION=0.75`, `VLLM_MAX_MODEL_LEN=8192`, float16 (auto) |
+| L4 / A10G (24GB) | `VLLM_GPU_MEMORY_UTILIZATION=0.85`, omit `VLLM_MAX_MODEL_LEN` for auto 16384, bfloat16 (auto) |
+
+Stream/live need inference **RTF &lt; 1** (chunks faster than 85ms playback). Benchmark:
+
+```bash
+docker compose exec inference python /app/scripts/debug_pcm_stream.py --grpc \
+  --grpc-addr 127.0.0.1:50051 --out-dir /tmp/debug_pcm
+```
+
+Target: `inter_chunk_gap_ms_avg` &lt; 85.
+
 ## Troubleshooting
 
 | Symptom | Action |
 |---------|--------|
 | CUDA OOM | Lower `VLLM_GPU_MEMORY_UTILIZATION` to `0.75` in `.env` |
+| Stream/live stutter, async OK | GPU too slow (RTF&gt;1); upgrade GPU or use async |
 | Health never OK | `docker compose logs inference` — wait for model load |
 | Build fails on vLLM | Confirm CUDA 12.4+ driver; rebuild `Dockerfile.gpu` |
 | Empty/small audio | Confirm `INFERENCE_MOCK=false`; check inference errors |

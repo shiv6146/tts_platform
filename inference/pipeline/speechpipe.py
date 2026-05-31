@@ -119,43 +119,37 @@ def turn_token_into_id(token_string, index):
 
 
 async def tokens_decoder(token_gen):
-    """Orpheus-style SNAC streaming: early first chunk, then 28-frame windows every 7 tokens."""
+    """Canonical Orpheus-TTS SNAC streaming (orpheus_tts/decoder.py).
+
+    Yields ~4096 bytes (~85ms @ 24kHz) per step from audio_hat[:, :, 2048:4096].
+    """
     buffer = []
     count = 0
-    first_chunk = False
 
     async for token_sim in token_gen:
         token = turn_token_into_id(token_sim, count)
         if token is not None and token > 0:
             buffer.append(token)
             count += 1
-            if not first_chunk and count >= 7:
-                audio_samples = convert_to_audio(buffer[-7:], count)
-                if audio_samples is not None:
-                    first_chunk = True
-                    yield audio_samples
-            elif first_chunk and count % 7 == 0 and count > 27:
+            if count % 7 == 0 and count > 27:
                 buffer_to_proc = buffer[-28:]
                 audio_samples = convert_to_audio(buffer_to_proc, count)
                 if audio_samples is not None:
                     yield audio_samples
 
-    if count >= 7:
-        if not first_chunk:
-            audio_samples = convert_to_audio(buffer[-7:], count)
-            if audio_samples is not None:
-                yield audio_samples
-        elif count % 7 != 0:
-            buffer_to_proc = buffer[-28:] if count > 27 else buffer[-7:]
-            audio_samples = convert_to_audio(buffer_to_proc, count)
-            if audio_samples is not None:
-                yield audio_samples
+    if count > 27 and count % 7 != 0:
+        buffer_to_proc = buffer[-28:]
+        audio_samples = convert_to_audio(buffer_to_proc, count)
+        if audio_samples is not None:
+            yield audio_samples
 
 
 def tokens_decoder_sync(syn_token_gen):
-    max_queue_size = 32 if _snac_device == "cuda" else 8
+    from .. import hardware
+
+    max_queue_size = hardware.DECODER_QUEUE_SIZE if _snac_device == "cuda" else 8
     audio_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
-    batch_size = 16 if _snac_device == "cuda" else 4
+    batch_size = hardware.TOKEN_BATCH_SIZE if _snac_device == "cuda" else 4
 
     async def async_token_gen():
         token_batch = []

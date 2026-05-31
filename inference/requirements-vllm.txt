@@ -1,3 +1,4 @@
 -r requirements-base.txt
 transformers>=4.46.0,<4.50
+# Orpheus-TTS README recommends 0.7.3 over buggy newer releases; do not bump without e2e test.
 vllm==0.7.3

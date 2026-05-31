@@ -56,14 +56,20 @@ def init_hardware() -> str:
             log.info("CUDA GPU: %s %.1fGB", gpu_name, gpu_mem_gb)
 
         if vllm_colocated:
-            NUM_WORKERS = max(1, NUM_WORKERS // 2)
-            DECODER_QUEUE_SIZE = min(DECODER_QUEUE_SIZE, 32)
-            TOKEN_BATCH_SIZE = min(TOKEN_BATCH_SIZE, 8)
+            # T4-class 16GB: share VRAM between vLLM KV cache and SNAC.
+            if gpu_mem_gb < 20:
+                NUM_WORKERS = max(1, NUM_WORKERS // 2)
+                DECODER_QUEUE_SIZE = min(DECODER_QUEUE_SIZE, 32)
+                TOKEN_BATCH_SIZE = min(TOKEN_BATCH_SIZE, 8)
+            else:
+                DECODER_QUEUE_SIZE = min(DECODER_QUEUE_SIZE, 64)
+                TOKEN_BATCH_SIZE = min(TOKEN_BATCH_SIZE, 24)
             log.info(
-                "vLLM colocated: capped workers=%s queue=%s batch=%s",
+                "vLLM colocated: workers=%s queue=%s batch=%s (%.1fGB VRAM)",
                 NUM_WORKERS,
                 DECODER_QUEUE_SIZE,
                 TOKEN_BATCH_SIZE,
+                gpu_mem_gb,
             )
         return f"cuda:{gpu_name}"
 
