@@ -15,6 +15,12 @@ _load_error: Optional[str] = None
 _lock = threading.Lock()
 _load_started = False
 
+CHUNK_AUDIO_SEC = 2048 / 24000  # SNAC slice per yield (~85.3ms)
+
+
+def _gpu_profile() -> str:
+    return os.environ.get("INFERENCE_GPU_PROFILE", "l4").strip().lower()
+
 
 def _engine_kwargs() -> dict:
     import torch
@@ -25,13 +31,18 @@ def _engine_kwargs() -> dict:
         os.environ.setdefault("VLLM_TARGET_DEVICE", "cpu")
         kw["device"] = "cpu"
         kw["enforce_eager"] = True
+    profile = _gpu_profile()
     gpu_util = os.environ.get("VLLM_GPU_MEMORY_UTILIZATION")
     if gpu_util:
         kw["gpu_memory_utilization"] = float(gpu_util)
+    elif profile == "t4":
+        kw["gpu_memory_utilization"] = 0.75
     if os.environ.get("VLLM_MAX_MODEL_LEN"):
         kw["max_model_len"] = int(os.environ["VLLM_MAX_MODEL_LEN"])
+    elif profile == "t4":
+        kw["max_model_len"] = 8192
+        log.info("vLLM max_model_len=8192 (INFERENCE_GPU_PROFILE=t4)")
     elif device != "cpu" and torch.cuda.is_available():
-        # Model config defaults to 131k; cap KV cache by VRAM (T4 16GB vs L4/A10 24GB+).
         vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         if vram_gb < 18:
             kw["max_model_len"] = 8192
@@ -39,12 +50,16 @@ def _engine_kwargs() -> dict:
             kw["max_model_len"] = 16384
         else:
             kw["max_model_len"] = 32768
-        log.info("vLLM max_model_len=%s (%.1fGB VRAM)", kw["max_model_len"], vram_gb)
+        log.info("vLLM max_model_len=%s (%.1fGB VRAM, profile=%s)", kw["max_model_len"], vram_gb, profile)
     return kw
 
 
 def _model_dtype():
     import torch
+
+    if _gpu_profile() == "t4":
+        log.info("INFERENCE_GPU_PROFILE=t4: using float16 (T4-equivalent dtype)")
+        return torch.float16
 
     override = os.environ.get("VLLM_DTYPE", "").lower()
     if override in ("float16", "half", "fp16"):

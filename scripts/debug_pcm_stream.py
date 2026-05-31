@@ -22,6 +22,7 @@ from pathlib import Path
 
 SAMPLE_RATE = 24000
 BYTES_PER_SAMPLE = 2
+SNAC_CHUNK_SEC = 2048 / SAMPLE_RATE  # ~85.3ms audio per gRPC chunk
 
 
 def write_wav(path: Path, pcm: bytes, sample_rate: int = SAMPLE_RATE) -> None:
@@ -61,10 +62,22 @@ def analyze_chunks(chunks: list[dict]) -> dict:
         gaps_ms.append((chunks[i]["t_recv"] - chunks[i - 1]["t_recv"]) * 1000)
     total_bytes = sum(sizes)
     audio_sec = total_bytes / (SAMPLE_RATE * BYTES_PER_SAMPLE)
+    wall_sec = chunks[-1]["t_recv"] - chunks[0]["t_recv"] if len(chunks) > 1 else 0.0
+    rtf_wall = round(wall_sec / audio_sec, 3) if audio_sec > 0 and wall_sec > 0 else None
+    rtf_gap = (
+        round((sum(gaps_ms) / len(gaps_ms)) / (SNAC_CHUNK_SEC * 1000), 3)
+        if gaps_ms
+        else None
+    )
+    realtime_ok = rtf_gap is not None and rtf_gap < 1.0
     return {
         "chunk_count": len(chunks),
         "total_bytes": total_bytes,
         "audio_seconds_if_concatenated": round(audio_sec, 3),
+        "wall_seconds_first_to_last_chunk": round(wall_sec, 3),
+        "rtf_wall_time_over_audio": rtf_wall,
+        "rtf_from_avg_inter_chunk_gap": rtf_gap,
+        "realtime_streaming_ok_rtf_lt_1": realtime_ok,
         "chunk_bytes_min": min(sizes),
         "chunk_bytes_max": max(sizes),
         "chunk_bytes_avg": round(sum(sizes) / len(sizes), 1),

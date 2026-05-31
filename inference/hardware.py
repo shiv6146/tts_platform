@@ -22,6 +22,11 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return os.environ.get(name, str(default)).lower() in ("1", "true", "yes")
 
 
+def gpu_profile() -> str:
+    """t4 = 16GB-era caps; l4 = 24GB+ tuning. Use t4 on L4 for apples-to-apples benchmarks."""
+    return os.environ.get("INFERENCE_GPU_PROFILE", "l4").strip().lower()
+
+
 def init_hardware() -> str:
     """Detect hardware, set module-level tuning knobs, return summary string."""
     global HIGH_END_GPU, NUM_WORKERS, DECODER_QUEUE_SIZE, TOKEN_BATCH_SIZE
@@ -56,8 +61,8 @@ def init_hardware() -> str:
             log.info("CUDA GPU: %s %.1fGB", gpu_name, gpu_mem_gb)
 
         if vllm_colocated:
-            # T4-class 16GB: share VRAM between vLLM KV cache and SNAC.
-            if gpu_mem_gb < 20:
+            profile = gpu_profile()
+            if profile == "t4" or gpu_mem_gb < 20:
                 NUM_WORKERS = max(1, NUM_WORKERS // 2)
                 DECODER_QUEUE_SIZE = min(DECODER_QUEUE_SIZE, 32)
                 TOKEN_BATCH_SIZE = min(TOKEN_BATCH_SIZE, 8)
@@ -65,7 +70,8 @@ def init_hardware() -> str:
                 DECODER_QUEUE_SIZE = min(DECODER_QUEUE_SIZE, 64)
                 TOKEN_BATCH_SIZE = min(TOKEN_BATCH_SIZE, 24)
             log.info(
-                "vLLM colocated: workers=%s queue=%s batch=%s (%.1fGB VRAM)",
+                "vLLM colocated profile=%s: workers=%s queue=%s batch=%s (%.1fGB VRAM)",
+                profile,
                 NUM_WORKERS,
                 DECODER_QUEUE_SIZE,
                 TOKEN_BATCH_SIZE,

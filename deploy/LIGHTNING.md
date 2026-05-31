@@ -32,21 +32,24 @@ chmod +x scripts/e2e_smoke.sh
 ./scripts/e2e_smoke.sh
 ```
 
-## GPU notes
+## GPU profiles (`INFERENCE_GPU_PROFILE`)
 
-| GPU | Typical settings |
-|-----|------------------|
-| T4 (16GB) | `VLLM_GPU_MEMORY_UTILIZATION=0.75`, `VLLM_MAX_MODEL_LEN=8192`, float16 (auto) |
-| L4 / A10G (24GB) | `VLLM_GPU_MEMORY_UTILIZATION=0.85`, omit `VLLM_MAX_MODEL_LEN` for auto 16384, bfloat16 (auto) |
+| Profile | Use on | Effect |
+|---------|--------|--------|
+| `t4` | T4 16GB, or **L4 benchmark baseline** | `float16`, `max_model_len=8192`, `gpu_mem=0.75`, SNAC batch=8 |
+| `l4` | L4 / A10G 24GB+ | `bfloat16` (CC≥8), auto `max_model_len` by VRAM, SNAC batch=24 |
 
-Stream/live need inference **RTF &lt; 1** (chunks faster than 85ms playback). Benchmark:
+Compare T4 settings on L4 hardware:
 
 ```bash
+# In .env: INFERENCE_GPU_PROFILE=t4  then restart inference
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d inference
 docker compose exec inference python /app/scripts/debug_pcm_stream.py --grpc \
-  --grpc-addr 127.0.0.1:50051 --out-dir /tmp/debug_pcm
+  --grpc-addr 127.0.0.1:50051 --out-dir /tmp/bench_t4profile
+# Switch to INFERENCE_GPU_PROFILE=l4 and VLLM_GPU_MEMORY_UTILIZATION=0.85, rerun
 ```
 
-Target: `inter_chunk_gap_ms_avg` &lt; 85.
+Stream/live need **RTF &lt; 1**: `inter_chunk_gap_ms_avg` &lt; 85 (~85ms per SNAC chunk).
 
 ## Troubleshooting
 
