@@ -11,7 +11,7 @@
     {
       "type": "stat",
       "title": "TTFB p95 (dashboard range)",
-      "description": "Uses increase() over the selected time range — works with sparse TTS traffic (unlike rate[5m]).",
+      "description": "Uses increase() over the selected time range. Live (websocket) TTFB/RTF are measured per phrase from final SendText → last PCM (not idle WS connect time).",
       "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s" } },

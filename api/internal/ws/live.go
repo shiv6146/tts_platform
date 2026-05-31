@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,11 +29,11 @@ type inbound struct {
 }
 
 type control struct {
-	Type                   string  `json:"type"`
-	Message                string  `json:"message,omitempty"`
-	TTFBMs                 int64   `json:"ttfb_ms,omitempty"`
-	Error                  string  `json:"error,omitempty"`
-	DeliveredAudioSeconds  float64 `json:"delivered_audio_seconds,omitempty"`
+	Type                  string  `json:"type"`
+	Message               string  `json:"message,omitempty"`
+	TTFBMs                int64   `json:"ttfb_ms,omitempty"`
+	Error                 string  `json:"error,omitempty"`
+	DeliveredAudioSeconds float64 `json:"delivered_audio_seconds,omitempty"`
 }
 
 type LiveHandler struct {
@@ -44,6 +45,15 @@ type LiveHandler struct {
 	MetricsWalletPerUser bool
 }
 
+// utteranceMetrics tracks one live phrase (SendText → last PCM), aligned with http_stream timing.
+type utteranceMetrics struct {
+	start       time.Time
+	lastPCM     time.Time
+	audioSec    float64
+	firstByte   bool
+	active      bool
+}
+
 func (h *LiveHandler) observeWallet(ctx context.Context, userID uuid.UUID) {
 	if !h.MetricsWalletPerUser {
 		return
@@ -53,6 +63,27 @@ func (h *LiveHandler) observeWallet(ctx context.Context, userID uuid.UUID) {
 		return
 	}
 	metrics.ObserveWalletBalance(true, userID, snap.BalanceUSD)
+}
+
+func flushUtterance(utt *utteranceMetrics) {
+	if !utt.active || utt.audioSec <= 0 {
+		utt.active = false
+		utt.firstByte = false
+		utt.audioSec = 0
+		return
+	}
+	end := utt.lastPCM
+	if end.IsZero() {
+		end = time.Now()
+	}
+	proc := end.Sub(utt.start).Seconds()
+	if proc > 0 {
+		metrics.RTF.WithLabelValues("websocket").Observe(proc / utt.audioSec)
+		metrics.RequestDuration.WithLabelValues("/v1/tts/live", "websocket").Observe(proc)
+	}
+	utt.active = false
+	utt.firstByte = false
+	utt.audioSec = 0
 }
 
 func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -90,10 +121,11 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	budget := snap.BalanceUSD
 	price := snap.PricePerAudioMinuteUSD
 	lastRefresh := time.Now()
-	var firstByte bool
-	start := time.Now()
-	var audioSeconds float64
 	sessionVoice := "tara"
+	var totalAudioSeconds float64
+
+	var mu sync.Mutex
+	var utt utteranceMetrics
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -112,21 +144,29 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if len(chunk.Pcm) == 0 {
 				continue
 			}
-			if !firstByte {
-				firstByte = true
-				ttfb := time.Since(start).Milliseconds()
-				_ = conn.WriteJSON(control{Type: "metadata", TTFBMs: ttfb})
-				metrics.TTFB.WithLabelValues("websocket").Observe(time.Since(start).Seconds())
-			}
 			sec := billing.SecondsFromPCM(len(chunk.Pcm), int(chunk.SampleRate))
-			audioSeconds += sec
+
+			mu.Lock()
+			if utt.active && !utt.firstByte {
+				utt.firstByte = true
+				ttfb := time.Since(utt.start)
+				_ = conn.WriteJSON(control{Type: "metadata", TTFBMs: ttfb.Milliseconds()})
+				metrics.TTFB.WithLabelValues("websocket").Observe(ttfb.Seconds())
+			}
+			if utt.active {
+				utt.audioSec += sec
+				utt.lastPCM = time.Now()
+			}
+			totalAudioSeconds += sec
+			mu.Unlock()
+
 			cost := billing.CostForSeconds(sec, price)
 			budget -= cost
 			if budget <= 0 {
 				_ = conn.WriteJSON(control{
 					Type:                  "insufficient_balance",
 					Message:               "delivery budget exhausted",
-					DeliveredAudioSeconds: audioSeconds,
+					DeliveredAudioSeconds: totalAudioSeconds,
 				})
 				_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(4020, "insufficient_balance"))
 				cancel()
@@ -155,6 +195,14 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(in.Text) == "" {
 			continue
 		}
+
+		if in.Final {
+			mu.Lock()
+			flushUtterance(&utt)
+			utt = utteranceMetrics{start: time.Now(), active: true}
+			mu.Unlock()
+		}
+
 		if err := live.SendText(requestID, in.Text, sessionVoice, in.Final); err != nil {
 			_ = conn.WriteJSON(control{Type: "error", Error: err.Error()})
 			continue
@@ -167,12 +215,11 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	mu.Lock()
+	flushUtterance(&utt)
+	mu.Unlock()
+
 	_ = coal.Flush()
-	proc := time.Since(start).Seconds()
-	if audioSeconds > 0 {
-		metrics.RTF.WithLabelValues("websocket").Observe(proc / audioSeconds)
-	}
-	metrics.RequestDuration.WithLabelValues("/v1/tts/live", "websocket").Observe(proc)
 	h.observeWallet(r.Context(), u.ID)
-	_ = conn.WriteJSON(control{Type: "done", DeliveredAudioSeconds: audioSeconds})
+	_ = conn.WriteJSON(control{Type: "done", DeliveredAudioSeconds: totalAudioSeconds})
 }
