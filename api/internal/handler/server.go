@@ -308,6 +308,8 @@ func (s *Server) runAsyncJob(jobID, userID uuid.UUID, text, voice string, snap c
 		}
 		defer s.Synth.Release()
 	}
+	done := metrics.TrackActiveStream()
+	defer done()
 	_, _ = s.Pool.Exec(ctx, `UPDATE tts_jobs SET status = 'running', updated_at = now() WHERE id = $1`, jobID)
 	requestID := jobID.String()
 	stream, err := s.Inference.Synthesize(ctx, requestID, text, voice)
@@ -316,8 +318,6 @@ func (s *Server) runAsyncJob(jobID, userID uuid.UUID, text, voice string, snap c
 		_, _ = s.Pool.Exec(ctx, `UPDATE tts_jobs SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`, jobID, msg)
 		return
 	}
-	metrics.ActiveStreams.Inc()
-	defer metrics.ActiveStreams.Dec()
 
 	var pcm []byte
 	coal := billing.NewCoalescer(s.Publisher, userID, requestID, "http_async", s.Cfg.BillingCoalesce)
@@ -421,15 +421,14 @@ func (s *Server) StreamTTS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.Synth.Release()
+	done := metrics.TrackActiveStream()
+	defer done()
 	requestID := uuid.New().String()
 	stream, err := s.Inference.Synthesize(r.Context(), requestID, req.Text, voice)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-
-	metrics.ActiveStreams.Inc()
-	defer metrics.ActiveStreams.Dec()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Transfer-Encoding", "chunked")

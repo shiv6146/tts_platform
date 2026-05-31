@@ -27,7 +27,7 @@ var (
 
 	ActiveStreams = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "tts_active_streams",
-		Help: "Active HTTP stream and WebSocket sessions",
+		Help: "In-flight TTS requests (from admission through last PCM byte)",
 	})
 
 	AudioSeconds = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -51,6 +51,12 @@ var (
 		Help: "Per-user wallet balance (METRICS_WALLET_PER_USER)",
 	}, []string{"user_id"})
 )
+
+// TrackActiveStream increments tts_active_streams and returns a cleanup func.
+func TrackActiveStream() func() {
+	ActiveStreams.Inc()
+	return func() { ActiveStreams.Dec() }
+}
 
 func ObserveWalletBalance(enabled bool, userID uuid.UUID, balance float64) {
 	if !enabled {

@@ -107,14 +107,13 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		defer h.Synth.Release()
 	}
+	done := metrics.TrackActiveStream()
+	defer done()
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
 	defer conn.Close()
-
-	metrics.ActiveStreams.Inc()
-	defer metrics.ActiveStreams.Dec()
 
 	requestID := uuid.New().String()
 	_ = conn.WriteJSON(control{Type: "ready"})

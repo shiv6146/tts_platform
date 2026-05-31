@@ -3,7 +3,7 @@
   "uid": "tts-platform",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "refresh": "10s",
   "tags": ["tts"],
   "templating": { "list": [] },
@@ -97,19 +97,24 @@
     {
       "type": "timeseries",
       "title": "Active streams (current)",
+      "description": "Scraped every 5s. Counts from synthesis slot acquire through stream end (includes TTFB / llama setup).",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
       "datasource": { "type": "prometheus" },
-      "targets": [{ "expr": "tts_active_streams", "legendFormat": "active" }]
+      "fieldConfig": { "defaults": { "min": 0, "decimals": 0 } },
+      "targets": [{ "expr": "tts_active_streams", "legendFormat": "active", "interval": "5s" }]
     },
     {
       "type": "timeseries",
-      "title": "Active streams (peak per step)",
+      "title": "Active streams (peak per 30s)",
+      "description": "Max concurrent in each 30s window — use to verify bench concurrency (e.g. 4, 8).",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
       "datasource": { "type": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0, "decimals": 0 } },
       "targets": [
         {
-          "expr": "max_over_time(tts_active_streams[$__interval])",
-          "legendFormat": "peak"
+          "expr": "max_over_time(tts_active_streams[30s])",
+          "legendFormat": "peak",
+          "interval": "5s"
         }
       ]
     },
