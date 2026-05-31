@@ -109,6 +109,8 @@ class Servicer:
                     context,
                 ):
                     yield chunk
+                # Sentinel: API maps seq<0 to WebSocket utterance_done (see live.go).
+                yield self.pb2.AudioChunk(pcm=b"", sample_rate=SAMPLE_RATE, seq=-1)
 
 
 def serve():

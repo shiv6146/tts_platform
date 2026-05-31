@@ -85,6 +85,12 @@ export function LivePanel({ voice, onDone }: Props) {
             appendLog(msg.message ?? "Insufficient balance");
           }
           if (msg.type === "error") appendLog(msg.error ?? "Error");
+          if (msg.type === "utterance_done") {
+            appendLog(
+              `Phrase done (${(msg.delivered_audio_seconds ?? 0).toFixed(2)} s audio)`
+            );
+            onDone();
+          }
           if (msg.type === "done") {
             appendLog(
               `Done (${(msg.delivered_audio_seconds ?? 0).toFixed(2)} s audio)`

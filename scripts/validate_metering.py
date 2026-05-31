@@ -177,7 +177,12 @@ def capture_live(api_url: str, api_key: str, text: str, voice: str) -> ModeResul
         sent = False
         t0 = time.time()
         while time.time() - t0 < 300:
-            msg = ws.recv()
+            try:
+                msg = ws.recv()
+            except websocket.WebSocketTimeoutException:
+                if sent and parts:
+                    break
+                raise
             if isinstance(msg, str):
                 j = json.loads(msg)
                 if j.get("type") == "ready" and not sent:
@@ -192,10 +197,16 @@ def capture_live(api_url: str, api_key: str, text: str, voice: str) -> ModeResul
                             }
                         )
                     )
-                if j.get("type") in ("done", "error", "insufficient_balance"):
+                if j.get("type") in (
+                    "utterance_done",
+                    "done",
+                    "error",
+                    "insufficient_balance",
+                ):
                     break
             else:
                 parts.append(bytes(msg))
+                ws.settimeout(3.0)
     finally:
         ws.close()
 

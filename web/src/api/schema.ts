@@ -240,7 +240,7 @@ export interface paths {
          * WebSocket live TTS (upgrade)
          * @description Upgrade to WebSocket (same-origin cookie `tts_token` or Bearer). Send JSON
          *     `{"type":"text","text":"...","final":true,"voice":"tara"}`.
-         *     Receive binary PCM s16le 24kHz and JSON control (`ready`, `metadata`, `insufficient_balance`, `done`).
+         *     Receive binary PCM s16le 24kHz and JSON control (`ready`, `metadata`, `utterance_done`, `insufficient_balance`, `done`).
          */
         get: operations["liveTTSWebSocket"];
         put?: never;

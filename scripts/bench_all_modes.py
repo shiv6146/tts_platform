@@ -150,10 +150,17 @@ def capture_live(api_url: str, api_key: str, text: str, voice: str) -> tuple[byt
         ws_url, header=[f"Authorization: Bearer {api_key}"], timeout=600
     )
     try:
+        import websocket as _ws_mod
+
         ws.settimeout(600)
         sent = False
         while True:
-            msg = ws.recv()
+            try:
+                msg = ws.recv()
+            except _ws_mod.WebSocketTimeoutException:
+                if sent and chunks:
+                    break
+                raise
             if isinstance(msg, str):
                 j = json.loads(msg)
                 if j.get("type") == "ready" and not sent:
@@ -169,7 +176,14 @@ def capture_live(api_url: str, api_key: str, text: str, voice: str) -> tuple[byt
                             }
                         )
                     )
-                if j.get("type") in ("done", "error", "insufficient_balance"):
+                if j.get("type") in (
+                    "utterance_done",
+                    "done",
+                    "error",
+                    "insufficient_balance",
+                ):
+                    if j.get("type") == "error":
+                        raise RuntimeError(j.get("error", "live error"))
                     break
             else:
                 data = bytes(msg)
@@ -183,6 +197,7 @@ def capture_live(api_url: str, api_key: str, text: str, voice: str) -> tuple[byt
                     }
                 )
                 parts.append(data)
+                ws.settimeout(3.0)
     finally:
         ws.close()
     return b"".join(parts), chunks

@@ -149,6 +149,18 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return
 			}
+			// Inference emits seq=-1 after each final utterance's PCM stream ends.
+			if chunk.Seq < 0 {
+				mu.Lock()
+				audio := utt.audioSec
+				flushUtterance(&utt)
+				mu.Unlock()
+				_ = conn.WriteJSON(control{
+					Type:                  "utterance_done",
+					DeliveredAudioSeconds: audio,
+				})
+				continue
+			}
 			if len(chunk.Pcm) == 0 {
 				continue
 			}
