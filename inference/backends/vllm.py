@@ -32,8 +32,24 @@ def _engine_kwargs() -> dict:
 def _model_dtype():
     import torch
 
+    override = os.environ.get("VLLM_DTYPE", "").lower()
+    if override in ("float16", "half", "fp16"):
+        return torch.float16
+    if override in ("bfloat16", "bf16"):
+        return torch.bfloat16
+    if override in ("float32", "fp32"):
+        return torch.float32
     if os.environ.get("VLLM_DEVICE", "cuda").lower() == "cpu":
         return torch.float32
+    if torch.cuda.is_available():
+        major, minor = torch.cuda.get_device_capability(0)
+        if major < 8:
+            log.info(
+                "GPU compute capability %s.%s — using float16 (bfloat16 needs >= 8.0)",
+                major,
+                minor,
+            )
+            return torch.float16
     return torch.bfloat16
 
 
