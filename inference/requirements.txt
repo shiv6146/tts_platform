@@ -1,0 +1,10 @@
+grpcio>=1.67.0
+grpcio-tools>=1.67.0
+protobuf>=5.28.0
+numpy>=1.26.0
+
+# GPU path (install in Dockerfile.gpu)
+# torch
+# vllm
+# transformers
+# snac

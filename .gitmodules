@@ -1,0 +1,3 @@
+[submodule "vendor/Orpheus-TTS"]
+	path = vendor/Orpheus-TTS
+	url = https://github.com/canopyai/Orpheus-TTS.git

@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package tts.v1;
+
+option go_package = "github.com/tts-platform/api/internal/grpc/tts/v1;ttsv1";
+
+service TTSInference {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc Synthesize(SynthesizeRequest) returns (stream AudioChunk);
+  rpc SynthesizeLive(stream LiveTextChunk) returns (stream AudioChunk);
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool ok = 1;
+}
+
+message SynthesizeRequest {
+  string request_id = 1;
+  string text = 2;
+  string voice = 3;
+}
+
+message LiveTextChunk {
+  string request_id = 1;
+  string text = 2;
+  bool final = 3;
+  string voice = 4;
+}
+
+message AudioChunk {
+  bytes pcm = 1;
+  int32 sample_rate = 2;
+  int64 seq = 3;
+}

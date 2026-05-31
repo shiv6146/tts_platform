@@ -1,0 +1,332 @@
+openapi: 3.0.3
+info:
+  title: Orpheus TTS Platform API
+  version: 1.0.0
+  description: |
+    HTTP API for Orpheus TTS. WebSocket live TTS at `GET /v1/tts/live` (upgrade).
+    WS: JSON in `{type,text,final}`, binary out PCM s16le 24kHz mono; control messages include `insufficient_balance`.
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      security: []
+      summary: Liveness
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/auth/register:
+    post:
+      operationId: registerUser
+      security: []
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "409":
+          description: Username taken
+  /v1/auth/api-keys:
+    post:
+      operationId: createApiKey
+      summary: Create API key (secret shown once)
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateApiKeyResponse"
+    get:
+      operationId: listApiKeys
+      summary: List API key prefixes
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyListResponse"
+  /v1/auth/api-keys/{keyId}:
+    delete:
+      operationId: revokeApiKey
+      summary: Revoke API key
+      parameters:
+        - $ref: "#/components/parameters/keyId"
+      responses:
+        "204":
+          description: Revoked
+        "404":
+          description: Not found
+  /v1/wallet:
+    get:
+      operationId: getWallet
+      summary: Wallet balance and pricing
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WalletResponse"
+  /v1/usage:
+    get:
+      operationId: listUsage
+      summary: Paginated usage events
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageListResponse"
+  /v1/tts/async:
+    post:
+      operationId: createAsyncTTS
+      summary: Async TTS job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TTSRequest"
+      responses:
+        "202":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobResponse"
+        "402":
+          description: Insufficient balance
+  /v1/tts/async/{jobId}:
+    get:
+      operationId: getAsyncJob
+      summary: Async job status
+      parameters:
+        - $ref: "#/components/parameters/jobId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AsyncJobStatusResponse"
+        "404":
+          description: Not found
+  /v1/tts/async/{jobId}/audio:
+    get:
+      operationId: getAsyncJobAudio
+      summary: Download WAV when completed
+      parameters:
+        - $ref: "#/components/parameters/jobId"
+      responses:
+        "200":
+          description: WAV audio
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Not found or not ready
+  /v1/tts/stream:
+    post:
+      operationId: streamTTS
+      summary: Stream TTS (chunked PCM)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TTSRequest"
+      responses:
+        "200":
+          description: Chunked audio stream
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "402":
+          description: Insufficient balance
+  /v1/tts/live:
+    get:
+      operationId: liveTTSWebSocket
+      summary: WebSocket live TTS (upgrade)
+      description: |
+        Upgrade to WebSocket. Send JSON `{"type":"text","text":"...","final":true}`.
+        Receive binary PCM s16le 24kHz and JSON control (`ready`, `metadata`, `insufficient_balance`, `done`).
+        Requires `Authorization: Bearer sk-...` on the upgrade request.
+      responses:
+        "101":
+          description: Switching Protocols
+        "402":
+          description: Insufficient balance
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key (sk-...)
+  parameters:
+    keyId:
+      name: keyId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    jobId:
+      name: jobId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    RegisterRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+    CreateApiKeyResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        prefix:
+          type: string
+        secret:
+          type: string
+          description: Full key sk-... shown once
+    ApiKeyListResponse:
+      type: object
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApiKeySummary"
+    ApiKeySummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        prefix:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+    WalletResponse:
+      type: object
+      properties:
+        balanceUsd:
+          type: number
+        pricePerAudioMinuteUsd:
+          type: number
+    UsageListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageEvent"
+        total:
+          type: integer
+    UsageEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        requestId:
+          type: string
+        transport:
+          type: string
+        audioSeconds:
+          type: number
+        costUsd:
+          type: number
+        occurredAt:
+          type: string
+          format: date-time
+    TTSRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+        voice:
+          type: string
+          default: tara
+    AsyncJobResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+    AsyncJobStatusResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, running, completed, failed]
+        error:
+          type: string
+          nullable: true

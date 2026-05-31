@@ -1,0 +1,154 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tts
+      POSTGRES_PASSWORD: tts
+      POSTGRES_DB: tts
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tts -d tts"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "6379:6379"
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-m", "8222"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://tts:tts@postgres:5432/tts?sslmode=disable
+      VALKEY_URL: redis://valkey:6379/0
+      NATS_URL: nats://nats:4222
+      INFERENCE_GRPC_ADDR: ${INFERENCE_GRPC_ADDR:-inference:50051}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      inference:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  metering:
+    build:
+      context: .
+      dockerfile: metering/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://tts:tts@postgres:5432/tts?sslmode=disable
+      VALKEY_URL: redis://valkey:6379/0
+      NATS_URL: nats://nats:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+
+  inference:
+    build:
+      context: .
+      dockerfile: inference/Dockerfile.gpu
+    env_file: .env
+    environment:
+      INFERENCE_BACKEND: ${INFERENCE_BACKEND:-auto}
+      REQUIRE_REAL_INFERENCE: ${REQUIRE_REAL_INFERENCE:-true}
+      INFERENCE_MOCK: ${INFERENCE_MOCK:-false}
+      ORPHEUS_MODEL_NAME: ${ORPHEUS_MODEL_NAME:-canopylabs/orpheus-3b-0.1-ft}
+      ORPHEUS_TOKENIZER: ${ORPHEUS_TOKENIZER:-canopylabs/orpheus-3b-0.1-pretrained}
+      VLLM_DEVICE: ${VLLM_DEVICE:-cuda}
+      VLLM_GPU_MEMORY_UTILIZATION: ${VLLM_GPU_MEMORY_UTILIZATION:-0.85}
+      SNAC_DEVICE: ${SNAC_DEVICE:-cuda}
+      GRPC_PORT: "50051"
+      ORPHEUS_VENDOR: /app/vendor/Orpheus-TTS/orpheus_tts_pypi
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - ./vendor/Orpheus-TTS:/app/vendor/Orpheus-TTS:ro
+    ports:
+      - "50051:50051"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import grpc; from tts.v1 import inference_pb2,inference_pb2_grpc; ch=grpc.insecure_channel('localhost:50051'); stub=inference_pb2_grpc.TTSInferenceStub(ch); r=stub.Health(inference_pb2.HealthRequest(), timeout=30); exit(0 if r.ok else 1)",
+        ]
+      interval: 30s
+      timeout: 35s
+      retries: 20
+      start_period: 600s
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+      - metering
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  pgdata:
+  hf_cache:
+  prometheus_data:
+  grafana_data:

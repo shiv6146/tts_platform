@@ -1,0 +1,5 @@
+-r requirements.txt
+# torch/torchaudio: install separately from PyTorch CPU index (see setup-inference-macos.sh / Dockerfile)
+transformers>=4.46.0,<4.50
+snac>=1.2.1
+vllm==0.7.3

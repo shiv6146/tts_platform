@@ -1,0 +1,34 @@
+# Lightning / NVIDIA GPU: vLLM in-process (no llama.cpp sidecar).
+services:
+  inference:
+    build:
+      context: .
+      dockerfile: inference/Dockerfile.gpu
+    environment:
+      INFERENCE_BACKEND: vllm
+      INFERENCE_MOCK: "false"
+      REQUIRE_REAL_INFERENCE: "true"
+      VLLM_DEVICE: cuda
+      VLLM_GPU_MEMORY_UTILIZATION: "0.85"
+      SNAC_DEVICE: cuda
+      ORPHEUS_MODEL_NAME: canopylabs/orpheus-3b-0.1-ft
+      ORPHEUS_TOKENIZER: canopylabs/orpheus-3b-0.1-pretrained
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import grpc; from tts.v1 import inference_pb2,inference_pb2_grpc; ch=grpc.insecure_channel('localhost:50051'); stub=inference_pb2_grpc.TTSInferenceStub(ch); r=stub.Health(inference_pb2.HealthRequest(), timeout=30); exit(0 if r.ok else 1)",
+        ]
+      interval: 30s
+      timeout: 35s
+      retries: 20
+      start_period: 600s

@@ -1,0 +1,29 @@
+# NVIDIA GPU: vLLM + optimized SNAC pipeline
+FROM python:3.11-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential git wget && rm -rf /var/lib/apt/lists/*
+COPY inference/requirements-base.txt inference/requirements-vllm.txt ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir torch==2.5.1 torchaudio==2.5.1 \
+      --index-url https://download.pytorch.org/whl/cu124 && \
+    pip install --no-cache-dir -r requirements-vllm.txt
+COPY proto /app/proto
+COPY inference /app/inference
+RUN mkdir -p /app/inference/tts/v1 && python -m grpc_tools.protoc -I /app/proto \
+    --python_out=/app/inference --grpc_python_out=/app/inference \
+    /app/proto/tts/v1/inference.proto && \
+    touch /app/inference/tts/__init__.py /app/inference/tts/v1/__init__.py
+ENV PYTHONPATH=/app/inference
+ENV GRPC_PORT=50051
+ENV INFERENCE_BACKEND=vllm
+ENV REQUIRE_REAL_INFERENCE=true
+ENV INFERENCE_MOCK=false
+ENV ORPHEUS_MODEL_NAME=canopylabs/orpheus-3b-0.1-ft
+ENV ORPHEUS_TOKENIZER=canopylabs/orpheus-3b-0.1-pretrained
+ENV VLLM_DEVICE=cuda
+ENV VLLM_GPU_MEMORY_UTILIZATION=0.85
+ENV SNAC_DEVICE=cuda
+ENV ORPHEUS_VENDOR=/app/vendor/Orpheus-TTS/orpheus_tts_pypi
+EXPOSE 50051
+CMD ["python", "/app/inference/server.py"]

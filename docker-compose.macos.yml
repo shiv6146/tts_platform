@@ -1,0 +1,62 @@
+# Apple Silicon: llama.cpp (GGUF) + gRPC inference (no vLLM in inference container).
+services:
+  api:
+    environment:
+      INFERENCE_GRPC_ADDR: inference:50051
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      inference:
+        condition: service_started
+
+  inference:
+    build:
+      context: .
+      dockerfile: inference/Dockerfile
+    environment:
+      INFERENCE_BACKEND: llamacpp
+      LLAMACPP_URL: http://llama-cpp-server:5006/v1/completions
+      SNAC_DEVICE: cpu
+    depends_on:
+      llama-cpp-server:
+        condition: service_started
+
+  llama-cpp-server:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    ports:
+      - "5006:5006"
+    volumes:
+      - ./models:/models
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+    command: >
+      -m /models/${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
+      --port 5006
+      --host 0.0.0.0
+      --threads ${LLAMA_CPU_THREADS:-6}
+      --threads-batch ${LLAMA_CPU_THREADS:-6}
+      --ctx-size ${ORPHEUS_MAX_TOKENS:-8192}
+      --n-predict ${ORPHEUS_MAX_TOKENS:-8192}
+      --rope-scaling linear
+
+  model-init:
+    image: curlimages/curl:latest
+    volumes:
+      - ./models:/models
+    environment:
+      ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        f="/models/$${ORPHEUS_GGUF_MODEL}"
+        if [ ! -f "$$f" ]; then
+          echo "Downloading GGUF..."
+          wget -q -O "$$f" "https://huggingface.co/lex-au/Orpheus-3b-FT-Q8_0.gguf/resolve/main/Orpheus-3b-FT-Q8_0.gguf"
+        fi
+        ls -la /models

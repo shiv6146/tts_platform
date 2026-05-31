@@ -1,0 +1,2 @@
+-- Seed is applied at API startup when DEFAULT_USERNAME is set (bcrypt hash).
+-- This migration only ensures schema is ready.
