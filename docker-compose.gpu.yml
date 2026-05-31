@@ -16,6 +16,10 @@ services:
       SNAC_DEVICE: cuda
       ORPHEUS_MODEL_NAME: canopylabs/orpheus-3b-0.1-ft
       ORPHEUS_TOKENIZER: canopylabs/orpheus-3b-0.1-pretrained
+      ORPHEUS_MAX_TOKENS: ${ORPHEUS_MAX_TOKENS:-4096}
+      ORPHEUS_TEMPERATURE: ${ORPHEUS_TEMPERATURE:-0.6}
+      ORPHEUS_TOP_P: ${ORPHEUS_TOP_P:-0.9}
+      ORPHEUS_BATCH_CHARS: ${ORPHEUS_BATCH_CHARS:-}
       HF_TOKEN: ${HF_TOKEN}
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
     ports:

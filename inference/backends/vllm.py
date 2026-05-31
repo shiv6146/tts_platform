@@ -17,9 +17,25 @@ _load_started = False
 
 CHUNK_AUDIO_SEC = 2048 / 24000  # SNAC slice per yield (~85.3ms)
 
+REPETITION_PENALTY = 1.1
+
 
 def _gpu_profile() -> str:
     return os.environ.get("INFERENCE_GPU_PROFILE", "l4").strip().lower()
+
+
+def _max_tokens() -> int:
+    # Match llama.cpp per-request budget; vLLM paged KV is per-request (not shared),
+    # so concurrency does not shrink this. Vendor default (1200) truncates our batches.
+    return int(os.environ.get("ORPHEUS_MAX_TOKENS", "4096"))
+
+
+def _temperature() -> float:
+    return float(os.environ.get("ORPHEUS_TEMPERATURE", "0.6"))
+
+
+def _top_p() -> float:
+    return float(os.environ.get("ORPHEUS_TOP_P", "0.9"))
 
 
 def _engine_kwargs() -> dict:
@@ -140,5 +156,8 @@ def make_token_generator(
         prompt=prompt,
         voice=voice,
         request_id=rid,
-        repetition_penalty=1.1,
+        temperature=_temperature(),
+        top_p=_top_p(),
+        max_tokens=_max_tokens(),
+        repetition_penalty=REPETITION_PENALTY,
     )
