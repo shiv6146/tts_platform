@@ -9,7 +9,7 @@ export COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
 docker compose build
 docker compose up -d
 echo "Waiting for inference (model download may take 15+ min)..."
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
   if docker compose exec -T inference python -c "
 import grpc
 from tts.v1 import inference_pb2, inference_pb2_grpc
@@ -18,10 +18,10 @@ stub = inference_pb2_grpc.TTSInferenceStub(ch)
 print(stub.Health(inference_pb2.HealthRequest(), timeout=30).ok)
 " 2>/dev/null | grep -q True; then
     echo "Inference healthy"
-  API_KEY=$(docker compose logs api 2>&1 | sed -n 's/.*default API key (save now): \(sk-[^ ]*\).*/\1/p' | tail -1)
-  export API_KEY
-  ./scripts/e2e_smoke.sh
-  exit 0
+    API_KEY=$(docker compose logs api 2>&1 | sed -n 's/.*default API key (save now): \(sk-[^ ]*\).*/\1/p' | tail -1)
+    export API_KEY
+    ./scripts/e2e_smoke.sh
+    exit 0
   fi
   sleep 30
 done
