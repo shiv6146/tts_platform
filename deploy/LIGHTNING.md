@@ -89,21 +89,47 @@ Single tuned **Q4** `llama-server` + **3× inference** gRPC replicas (SNAC paral
 ORPHEUS_GGUF_MODEL=Orpheus-3b-FT-Q4_K_M.gguf
 ORPHEUS_GGUF_HF_REPO=lex-au/Orpheus-3b-FT-Q4_K_M.gguf
 LLAMACPP_REPLICAS=1
-LLAMACPP_PARALLEL=48
+LLAMACPP_PARALLEL=12
 # ctx is SHARED across parallel slots. per-slot = ctx / parallel must be big
 # enough: Orpheus emits ~82 audio tokens/s, so 4096 tokens/slot ≈ 50s of audio.
 # 8192/48 ≈ 170 tokens/slot → audio cut off after ~2s. Keep ctx = parallel*4096.
-LLAMACPP_CTX_SIZE=196608   # 48 * 4096; compose-up.sh derives this if unset
+LLAMACPP_CTX_SIZE=49152    # 12 * 4096; compose-up.sh derives this if unset
 LLAMACPP_CACHE_TYPE_K=q8_0 # q4_0 KV can degrade Orpheus audio
 INFERENCE_REPLICAS=3
 INFERENCE_GRPC_ADDR=dns:///inference:50051
-MAX_CONCURRENT_SYNTHESIS=48
+MAX_CONCURRENT_SYNTHESIS=5 # measured realtime ceiling (see below); excess requests queue
 RATE_LIMIT_RPM=5000   # bench only
 
 ./scripts/compose-up.sh llamacpp
 ```
 
 API uses gRPC **round_robin** across scaled `inference` containers. Each replica has its own GIL + per-thread CUDA SNAC streams.
+
+### Concurrency ceiling — measured on one L40S (Q4 + SNAC, both on the GPU)
+
+End-to-end streaming benchmark (`scripts/bench_remote.py --mode stream`, ~16s audio per
+request, RTF = avg inter-chunk gap / audio frame):
+
+| Concurrent streams | RTF (avg) | Streams realtime (RTF<1) | TTFB |
+|--------------------|-----------|--------------------------|------|
+| 4 | 0.76 | 100% | ~560ms |
+| **5** | **0.89** | **100%** | **~620ms** |
+| 6 | 0.99 | ~58% (hard edge) | ~520ms |
+| 8 | 1.33 | 0% (if admitted) | — |
+
+**Verdict: ~5 concurrent realtime streams (stream or live) per L40S.** Token-gen (llama)
+and audio-decode (SNAC) share the one GPU, so the limit is GPU contention between them,
+not raw llama throughput.
+
+Things that look faster but aren't, end-to-end:
+- **2× llama replicas** (nginx `least_conn` LB, `LLAMACPP_REPLICAS=2`): isolated llama
+  token throughput jumps 816→1177 tok/s and GPU 45%→100%, **but** it starves SNAC on the
+  shared GPU and drops the end-to-end ceiling to ~4. **3× replicas thrash** (over-subscribed).
+- **SNAC on CPU** (`SNAC_DEVICE=cpu`): far too slow, RTF blows up immediately.
+
+`MAX_CONCURRENT_SYNTHESIS=5` is the admission gate: it caps *concurrent* synthesis at the
+realtime ceiling. Beyond it, requests **queue** (TTFB grows — ~6.9s at offered c=8) rather
+than degrading the RTF of in-flight streams. Raise it only by adding GPUs.
 
 ### Multiple llama.cpp replicas (one L40S, keep Q8)
 

@@ -74,12 +74,13 @@ services:
       - -ngl
       - "99"
       # ctx is shared across --parallel slots: per-slot = ctx_size / parallel.
-      # Default 196608 / 48 = 4096 tokens/slot (~50s audio). compose-up.sh keeps
-      # this in sync when you change LLAMACPP_PARALLEL.
+      # Default 49152 / 12 = 4096 tokens/slot (~50s audio). compose-up.sh keeps
+      # this in sync when you change LLAMACPP_PARALLEL. 12 slots > the ~5-stream
+      # realtime ceiling on one L40S, with burst headroom; more slots just waste KV.
       - --ctx-size
-      - "${LLAMACPP_CTX_SIZE:-196608}"
+      - "${LLAMACPP_CTX_SIZE:-49152}"
       - --parallel
-      - "${LLAMACPP_PARALLEL:-48}"
+      - "${LLAMACPP_PARALLEL:-12}"
       - --flash-attn
       - "${LLAMACPP_FLASH_ATTN:-on}"
       - --cont-batching
