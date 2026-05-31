@@ -29,7 +29,8 @@ if [[ -z "${API_KEY:-}" ]]; then
 fi
 
 docker compose exec -T inference mkdir -p /app/scripts
-docker compose cp scripts/bench_all_modes.py scripts/debug_pcm_stream.py inference:/app/scripts/
+docker compose cp scripts/bench_all_modes.py inference:/app/scripts/bench_all_modes.py
+docker compose cp scripts/debug_pcm_stream.py inference:/app/scripts/debug_pcm_stream.py
 docker compose exec -T inference pip install -q websocket-client
 
 OUT="/tmp/bench_${TAG}"
