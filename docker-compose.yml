@@ -129,8 +129,8 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-    ports:
-      - "${PROMETHEUS_HOST_PORT:-9091}:9090"
+    # No host port by default (9090/9091 often taken on Lightning). Use Grafana :3000 or:
+    #   PROMETHEUS_HOST_PORT=9092 docker compose up -d prometheus
     depends_on:
       - api
       - metering
