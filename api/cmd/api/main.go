@@ -105,6 +105,12 @@ func main() {
 	router.Post("/v1/auth/login", srv.LoginUser)
 	router.Post("/v1/auth/logout", srv.LogoutUser)
 
+	uiHandler := ui.Handler()
+	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		uiHandler.ServeHTTP(w, r)
+	})
+	router.Handle("/assets/*", uiHandler)
+
 	router.Group(func(pr chi.Router) {
 		pr.Use(auth.BearerMiddleware(pool))
 		pr.Use(rateLimitMiddleware(srv.Limiter))
@@ -112,7 +118,7 @@ func main() {
 		pr.Mount("/", gen.HandlerFromMux(srv, apiRoutes))
 	})
 
-	router.NotFound(ui.Handler().ServeHTTP)
+	router.NotFound(uiHandler.ServeHTTP)
 
 	addr := ":" + cfg.APIPort
 	httpSrv := &http.Server{Addr: addr, Handler: router}
