@@ -129,7 +129,8 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-    # No host port (9090/9091 often taken on Lightning); reachable as prometheus:9090 on compose network
+    ports:
+      - "9090:9090"
     depends_on:
       - api
       - metering

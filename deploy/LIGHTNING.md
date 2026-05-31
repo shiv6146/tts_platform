@@ -72,6 +72,26 @@ chmod +x scripts/bench_rtf.sh
 ./scripts/bench_rtf.sh llamacpp_q8
 ```
 
+## Monitoring (Grafana / Prometheus)
+
+Both are defined in `docker-compose.yml`. Start the **full** stack (not only `api` / `inference`):
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.llamacpp-gpu.yml
+docker compose up -d
+docker compose ps grafana prometheus metering
+```
+
+| URL | Default login |
+|-----|----------------|
+| Grafana `http://<host>:3000` | `admin` / `admin` |
+| Prometheus `http://<host>:9090` | none |
+| API metrics | `http://<host>:8080/metrics` |
+
+Provisioned dashboard: **TTS Platform** (wallet, usage, inference latency). Prometheus scrapes `api:8080` and `metering:8081` on the compose network.
+
+`llama-cpp-server` may show **unhealthy** on old images: built-in healthcheck hits port **8080** while the server listens on **5006**. Current `docker-compose.llamacpp-gpu.yml` overrides this with `curl http://127.0.0.1:5006/health`.
+
 ## Troubleshooting
 
 | Symptom | Action |
@@ -79,6 +99,8 @@ chmod +x scripts/bench_rtf.sh
 | CUDA OOM | Lower `VLLM_GPU_MEMORY_UTILIZATION` to `0.75` in `.env` |
 | Stream/live stutter, async OK | GPU too slow (RTF&gt;1); upgrade GPU or use async |
 | Health never OK | `docker compose logs inference` — wait for model load |
+| `llama-cpp-server` unhealthy | `curl -f http://127.0.0.1:5006/health` inside container; recreate after compose healthcheck fix |
+| No Grafana on :3000 | Run `docker compose up -d` (all services); check `docker compose ps grafana` |
 | Build fails on vLLM | Confirm CUDA 12.4+ driver; rebuild `Dockerfile.gpu` |
 | Empty/small audio | Confirm `INFERENCE_MOCK=false`; check inference errors |
 

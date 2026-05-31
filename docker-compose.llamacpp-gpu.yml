@@ -58,7 +58,13 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    # server-cuda image has no wget/curl; rely on logs ("server is listening") + service_started
+    # Image HEALTHCHECK curls :8080; we listen on :5006 — override or Compose shows "unhealthy".
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:5006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
 
   model-init:
     image: python:3.11-slim
