@@ -79,6 +79,22 @@ fi
 
 LLAMACPP_REPLICAS="${LLAMACPP_REPLICAS:-1}"
 INFERENCE_REPLICAS="${INFERENCE_REPLICAS:-3}"
+
+# llama.cpp shares --ctx-size across --parallel slots. Each request needs its own
+# per-slot budget (LLAMACPP_SLOT_TOKENS, ~82 tokens/s audio) or generation is cut
+# off at finish_reason=length. Derive ctx = parallel * slot unless set explicitly.
+LLAMACPP_PARALLEL="${LLAMACPP_PARALLEL:-48}"
+LLAMACPP_SLOT_TOKENS="${LLAMACPP_SLOT_TOKENS:-4096}"
+if [[ -z "${LLAMACPP_CTX_SIZE:-}" ]]; then
+  export LLAMACPP_CTX_SIZE=$(( LLAMACPP_PARALLEL * LLAMACPP_SLOT_TOKENS ))
+fi
+per_slot=$(( LLAMACPP_CTX_SIZE / LLAMACPP_PARALLEL ))
+echo "llama.cpp ctx=${LLAMACPP_CTX_SIZE} parallel=${LLAMACPP_PARALLEL} -> ${per_slot} tokens/slot (~$(( per_slot / 82 ))s audio max)"
+if [[ "$per_slot" -lt 1024 ]]; then
+  echo "WARNING: per-slot context ${per_slot} < 1024 tokens; audio will truncate. Raise LLAMACPP_CTX_SIZE or lower LLAMACPP_PARALLEL." >&2
+fi
+export LLAMACPP_PARALLEL
+
 UP_ARGS=(up -d)
 [[ "$BUILD" == "1" ]] && UP_ARGS=(up -d --build)
 

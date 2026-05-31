@@ -13,14 +13,19 @@ log = logging.getLogger("inference.decoder")
 
 SAMPLE_RATE = 24000
 
-# Orpheus audio is token-dense (~80+ LLM tokens/s). Keep batches within LLAMACPP_CTX_SIZE.
+# Orpheus emits ~6.5 audio tokens per spoken character (~82 tokens/s of audio).
+# A batch must render within the per-request token budget (ORPHEUS_MAX_TOKENS),
+# which itself must fit the llama.cpp per-slot context (ctx_size / parallel).
+TOKENS_PER_CHAR = 6.5
+
+
 def _max_batch_chars() -> int:
     explicit = os.environ.get("ORPHEUS_BATCH_CHARS", "").strip()
     if explicit:
         return max(80, int(explicit))
-    ctx = int(os.environ.get("LLAMACPP_CTX_SIZE", "8192"))
-    # ~5 chars spoken per audio token ballpark → leave headroom for prompt + SNAC tokens
-    return max(200, min(1000, (ctx - 256) // 5))
+    budget = int(os.environ.get("ORPHEUS_MAX_TOKENS", "4096"))
+    # 30% headroom so a batch never hits the generation cap mid-sentence.
+    return max(200, min(1000, int(budget / TOKENS_PER_CHAR * 0.7)))
 
 
 MAX_BATCH_CHARS = _max_batch_chars()

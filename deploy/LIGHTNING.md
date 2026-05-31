@@ -90,7 +90,11 @@ ORPHEUS_GGUF_MODEL=Orpheus-3b-FT-Q4_K_M.gguf
 ORPHEUS_GGUF_HF_REPO=lex-au/Orpheus-3b-FT-Q4_K_M.gguf
 LLAMACPP_REPLICAS=1
 LLAMACPP_PARALLEL=48
-LLAMACPP_CTX_SIZE=8192   # 4096 truncates long lines (~50s audio cap); Q4 is fine at 8192 on L40S
+# ctx is SHARED across parallel slots. per-slot = ctx / parallel must be big
+# enough: Orpheus emits ~82 audio tokens/s, so 4096 tokens/slot ≈ 50s of audio.
+# 8192/48 ≈ 170 tokens/slot → audio cut off after ~2s. Keep ctx = parallel*4096.
+LLAMACPP_CTX_SIZE=196608   # 48 * 4096; compose-up.sh derives this if unset
+LLAMACPP_CACHE_TYPE_K=q8_0 # q4_0 KV can degrade Orpheus audio
 INFERENCE_REPLICAS=3
 INFERENCE_GRPC_ADDR=dns:///inference:50051
 MAX_CONCURRENT_SYNTHESIS=48
@@ -184,7 +188,8 @@ Only one GPU token backend at a time. The API always uses gRPC **`inference:5005
 | No Grafana on :3000 | Run `docker compose up -d` (all services); check `docker compose ps grafana` |
 | Build fails on vLLM | Confirm CUDA 12.4+ driver; rebuild `Dockerfile.gpu` |
 | Empty/small audio | Confirm `INFERENCE_MOCK=false`; check inference errors |
-| Audio cuts off mid-text | Raise `LLAMACPP_CTX_SIZE` (8192+); not usually Q4 — ctx limits audio tokens (~80/s). Use `ORPHEUS_BATCH_CHARS=400` for long inputs |
+| Audio cuts off after ~2s | **Per-slot context too small.** llama shares `--ctx-size` across `--parallel` slots; need `ctx/parallel >= 4096`. Set `LLAMACPP_CTX_SIZE=$((parallel*4096))` (compose-up.sh does this automatically). Not a Q4 issue. |
+| Audio cuts off mid-sentence on long text | Lower `ORPHEUS_BATCH_CHARS` (e.g. 300) or raise `ORPHEUS_MAX_TOKENS` (and ctx) |
 
 ## Update
 

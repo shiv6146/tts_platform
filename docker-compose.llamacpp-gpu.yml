@@ -22,11 +22,10 @@ services:
       SNAC_DEVICE: cuda
       ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q4_K_M.gguf}
       ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q4_K_M.gguf}
-      ORPHEUS_MAX_TOKENS: ${ORPHEUS_MAX_TOKENS:-8192}
+      ORPHEUS_MAX_TOKENS: ${ORPHEUS_MAX_TOKENS:-4096}
       ORPHEUS_TEMPERATURE: ${ORPHEUS_TEMPERATURE:-0.6}
       ORPHEUS_TOP_P: ${ORPHEUS_TOP_P:-0.9}
       GRPC_MAX_WORKERS: ${GRPC_MAX_WORKERS:-48}
-      LLAMACPP_CTX_SIZE: ${LLAMACPP_CTX_SIZE:-8192}
       ORPHEUS_BATCH_CHARS: ${ORPHEUS_BATCH_CHARS:-}
     volumes: []
     depends_on:
@@ -74,8 +73,11 @@ services:
       - "5006"
       - -ngl
       - "99"
+      # ctx is shared across --parallel slots: per-slot = ctx_size / parallel.
+      # Default 196608 / 48 = 4096 tokens/slot (~50s audio). compose-up.sh keeps
+      # this in sync when you change LLAMACPP_PARALLEL.
       - --ctx-size
-      - "${LLAMACPP_CTX_SIZE:-8192}"
+      - "${LLAMACPP_CTX_SIZE:-196608}"
       - --parallel
       - "${LLAMACPP_PARALLEL:-48}"
       - --flash-attn
@@ -86,9 +88,9 @@ services:
       - --ubatch-size
       - "${LLAMACPP_UBATCH_SIZE:-256}"
       - --cache-type-k
-      - "${LLAMACPP_CACHE_TYPE_K:-q4_0}"
+      - "${LLAMACPP_CACHE_TYPE_K:-q8_0}"
       - --cache-type-v
-      - "${LLAMACPP_CACHE_TYPE_V:-q4_0}"
+      - "${LLAMACPP_CACHE_TYPE_V:-q8_0}"
       - --prio
       - "${LLAMACPP_PRIO:-2}"
     deploy:

@@ -24,16 +24,15 @@ def _timeout() -> int:
     return int(os.environ.get("ORPHEUS_API_TIMEOUT", "120"))
 
 
-def _ctx_size() -> int:
-    return int(os.environ.get("LLAMACPP_CTX_SIZE", "8192"))
-
-
 def _max_tokens() -> int:
-    """Cap generation to fit llama context (prompt + audio tokens share ctx)."""
-    ctx = _ctx_size()
-    default_cap = max(512, ctx - 128)
-    want = int(os.environ.get("ORPHEUS_MAX_TOKENS", str(default_cap)))
-    return min(want, default_cap)
+    """Per-request generation budget (audio tokens).
+
+    NOTE: this must fit within the llama.cpp *per-slot* context, which is
+    LLAMACPP_CTX_SIZE / LLAMACPP_PARALLEL. Orpheus emits ~82 tokens per second
+    of audio, so 4096 tokens ≈ 50s. Keep --ctx-size >= parallel * this value or
+    generations get cut off at finish_reason=length.
+    """
+    return int(os.environ.get("ORPHEUS_MAX_TOKENS", "4096"))
 
 
 def _temperature() -> float:
