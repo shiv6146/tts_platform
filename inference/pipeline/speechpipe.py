@@ -119,30 +119,37 @@ def turn_token_into_id(token_string, index):
 
 
 async def tokens_decoder(token_gen):
-    """Match upstream Orpheus decoder cadence (28-frame windows, every 7 tokens after warmup).
-
-    Aggressive overlapping yields (49-frame windows every 7 tokens) produced duplicate
-    PCM when chunks were concatenated — audible stutter in stream/live playback.
-    """
+    """Orpheus-style SNAC streaming: early first chunk, then 28-frame windows every 7 tokens."""
     buffer = []
     count = 0
+    first_chunk = False
 
     async for token_sim in token_gen:
         token = turn_token_into_id(token_sim, count)
         if token is not None and token > 0:
             buffer.append(token)
             count += 1
-            if count % 7 == 0 and count > 27:
+            if not first_chunk and count >= 7:
+                audio_samples = convert_to_audio(buffer[-7:], count)
+                if audio_samples is not None:
+                    first_chunk = True
+                    yield audio_samples
+            elif first_chunk and count % 7 == 0 and count > 27:
                 buffer_to_proc = buffer[-28:]
                 audio_samples = convert_to_audio(buffer_to_proc, count)
                 if audio_samples is not None:
                     yield audio_samples
 
-    if count > 27 and count % 7 != 0:
-        buffer_to_proc = buffer[-28:]
-        audio_samples = convert_to_audio(buffer_to_proc, count)
-        if audio_samples is not None:
-            yield audio_samples
+    if count >= 7:
+        if not first_chunk:
+            audio_samples = convert_to_audio(buffer[-7:], count)
+            if audio_samples is not None:
+                yield audio_samples
+        elif count % 7 != 0:
+            buffer_to_proc = buffer[-28:] if count > 27 else buffer[-7:]
+            audio_samples = convert_to_audio(buffer_to_proc, count)
+            if audio_samples is not None:
+                yield audio_samples
 
 
 def tokens_decoder_sync(syn_token_gen):

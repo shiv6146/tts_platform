@@ -12,20 +12,10 @@ type Props = {
   onDone: () => void;
 };
 
-function concatChunks(chunks: Uint8Array[]): Uint8Array {
-  const n = chunks.reduce((s, c) => s + c.length, 0);
-  const out = new Uint8Array(n);
-  let off = 0;
-  for (const c of chunks) {
-    out.set(c, off);
-    off += c.length;
-  }
-  return out;
-}
-
 export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [bytesReceived, setBytesReceived] = useState(0);
   const playerRef = useRef<PCMStreamPlayer | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -46,19 +36,21 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
     void playerRef.current?.stop();
     playerRef.current = null;
     setLoading(false);
+    setBytesReceived(0);
     setStatus("Stopped");
   }
 
   async function stream() {
     if (!voice || !text.trim()) return;
     stop();
-    const player = new PCMStreamPlayer();
+    const player = new PCMStreamPlayer(0.2);
     playerRef.current = player;
     const ac = new AbortController();
     abortRef.current = ac;
     setLoading(true);
-    setStatus("Receiving audio…");
-    const chunks: Uint8Array[] = [];
+    setBytesReceived(0);
+    setStatus("Connecting…");
+    let totalBytes = 0;
     try {
       const res = await fetch("/v1/tts/stream", {
         method: "POST",
@@ -81,16 +73,27 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
         setLoading(false);
         return;
       }
+      setStatus("Streaming…");
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (value?.length) chunks.push(new Uint8Array(value));
+        if (value?.length) {
+          totalBytes += value.length;
+          setBytesReceived(totalBytes);
+          player.enqueue(new Uint8Array(value));
+          const sec = pcmAudioSeconds(
+            new Uint8Array(value.buffer, value.byteOffset, value.byteLength)
+          );
+          if (totalBytes === value.length) {
+            setStatus(`First bytes (${sec > 0 ? `${(sec * 1000).toFixed(0)}ms audio` : value.length + " B"})…`);
+          } else {
+            setStatus(`Streaming… ${(totalBytes / 1024).toFixed(1)} KB received`);
+          }
+        }
       }
-      const pcm = concatChunks(chunks);
-      const sec = pcmAudioSeconds(pcm);
-      setStatus(`Playing ${sec.toFixed(2)}s audio…`);
-      await player.playAll(pcm);
-      setStatus(`Done (${sec.toFixed(2)}s)`);
+      player.flush();
+      const totalSec = totalBytes / (24000 * 2);
+      setStatus(`Done (${totalSec.toFixed(2)}s audio, ${(totalBytes / 1024).toFixed(1)} KB)`);
       onDone();
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -105,7 +108,7 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
     <div className="card">
       <h2>Stream</h2>
       <p className="muted">
-        Full text in — PCM is buffered, then played as one clip (24 kHz) to avoid chunk gaps.
+        Chunked PCM over HTTP — audio plays as chunks arrive (24 kHz).
       </p>
       {!voice && <p className="status err">Select a voice in Voice Lab first.</p>}
       <div style={{ marginTop: "0.75rem" }}>
@@ -121,13 +124,16 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
       <EmotiveChips tags={meta?.emotiveTags ?? []} onInsert={insertTag} />
       <div className="row">
         <button type="button" onClick={stream} disabled={loading || !voice}>
-          {loading ? "Working…" : "Stream speak"}
+          {loading ? "Playing…" : "Stream speak"}
         </button>
         <button type="button" className="secondary" onClick={stop}>
           Stop
         </button>
       </div>
       {status && <p className="status">{status}</p>}
+      {loading && bytesReceived > 0 && (
+        <p className="muted">Received {bytesReceived.toLocaleString()} bytes</p>
+      )}
     </div>
   );
 }

@@ -134,7 +134,7 @@ export class PCMStreamPlayer {
     void this.ensureReady().then(() => {
       const copy = new Uint8Array(pcm);
       this.samplesQueued += copy.length >> 1;
-      this.node?.port.postMessage(copy.buffer, [copy.buffer]);
+      this.node.port.postMessage({ buf: copy.buffer }, [copy.buffer]);
       this.maybeStartPlayback();
     });
   }
