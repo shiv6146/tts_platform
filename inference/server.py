@@ -10,7 +10,8 @@ from concurrent import futures
 
 import grpc
 
-from engine import SAMPLE_RATE, initialize, ready, synthesize_pcm_stream
+from engine import initialize, ready, synthesize_pcm_stream
+from pipeline.decoder import SAMPLE_RATE
 
 GRPC_PORT = os.environ.get("GRPC_PORT", "50051")
 
