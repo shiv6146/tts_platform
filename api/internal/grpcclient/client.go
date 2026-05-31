@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	ttsv1 "github.com/tts-platform/api/internal/grpc/tts/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	_ "google.golang.org/grpc/resolver/dns"
 )
 
 type Client struct {
@@ -17,14 +19,26 @@ type Client struct {
 }
 
 func Dial(ctx context.Context, addr string) (*Client, error) {
-	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	conn, err := grpc.DialContext(dialCtx, addr,
+	target := addr
+	opts := []grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
-	)
+	}
+	// docker compose --scale inference=N → multiple A records; round_robin spreads streams.
+	if strings.HasPrefix(addr, "dns:///") || !strings.Contains(addr, "://") {
+		if !strings.Contains(addr, "://") {
+			target = "dns:///" + addr
+		}
+		opts = append(opts, grpc.WithDefaultServiceConfig(
+			`{"loadBalancingConfig":[{"round_robin":{}}]}`,
+		))
+	}
+
+	dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	opts = append(opts, grpc.WithBlock())
+	conn, err := grpc.DialContext(dialCtx, target, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("grpc dial %s: %w", addr, err)
+		return nil, fmt.Errorf("grpc dial %s: %w", target, err)
 	}
 	return &Client{conn: conn, client: ttsv1.NewTTSInferenceClient(conn)}, nil
 }

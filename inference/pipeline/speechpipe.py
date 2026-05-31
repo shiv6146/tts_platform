@@ -19,7 +19,7 @@ MAX_CACHE_SIZE = 10000
 
 _snac_model = None
 _snac_device: str | None = None
-_cuda_stream = None
+_decode_stream_local = threading.local()
 
 
 def _resolve_snac_device() -> str:
@@ -34,18 +34,27 @@ def _resolve_snac_device() -> str:
 
 
 def ensure_snac_loaded() -> None:
-    global _snac_model, _snac_device, _cuda_stream
+    global _snac_model, _snac_device
     if _snac_model is not None:
         return
     _snac_device = _resolve_snac_device()
     log.info("loading SNAC on device=%s", _snac_device)
     _snac_model = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval().to(_snac_device)
-    if _snac_device == "cuda":
-        _cuda_stream = torch.cuda.Stream()
 
 
 def snac_ready() -> bool:
     return _snac_model is not None
+
+
+def _decode_stream() -> torch.cuda.Stream | None:
+    """Per-thread CUDA stream so concurrent gRPC workers decode in parallel."""
+    if _snac_device != "cuda":
+        return None
+    stream = getattr(_decode_stream_local, "stream", None)
+    if stream is None:
+        stream = torch.cuda.Stream()
+        _decode_stream_local.stream = stream
+    return stream
 
 
 def convert_to_audio(multiframe, count):
@@ -57,20 +66,13 @@ def convert_to_audio(multiframe, count):
     frame = multiframe[: num_frames * 7]
     device = _snac_device
 
-    codes_0 = torch.zeros(num_frames, dtype=torch.int32, device=device)
-    codes_1 = torch.zeros(num_frames * 2, dtype=torch.int32, device=device)
-    codes_2 = torch.zeros(num_frames * 4, dtype=torch.int32, device=device)
-    frame_tensor = torch.tensor(frame, dtype=torch.int32, device=device)
-
-    for j in range(num_frames):
-        idx = j * 7
-        codes_0[j] = frame_tensor[idx]
-        codes_1[j * 2] = frame_tensor[idx + 1]
-        codes_1[j * 2 + 1] = frame_tensor[idx + 4]
-        codes_2[j * 4] = frame_tensor[idx + 2]
-        codes_2[j * 4 + 1] = frame_tensor[idx + 3]
-        codes_2[j * 4 + 2] = frame_tensor[idx + 5]
-        codes_2[j * 4 + 3] = frame_tensor[idx + 6]
+    frame_tensor = torch.tensor(frame, dtype=torch.int32, device=device).view(num_frames, 7)
+    codes_0 = frame_tensor[:, 0]
+    codes_1 = torch.stack((frame_tensor[:, 1], frame_tensor[:, 4]), dim=1).reshape(num_frames * 2)
+    codes_2 = torch.stack(
+        (frame_tensor[:, 2], frame_tensor[:, 3], frame_tensor[:, 5], frame_tensor[:, 6]),
+        dim=1,
+    ).reshape(num_frames * 4)
 
     codes = [codes_0.unsqueeze(0), codes_1.unsqueeze(0), codes_2.unsqueeze(0)]
     if (
@@ -83,11 +85,18 @@ def convert_to_audio(multiframe, count):
     ):
         return None
 
-    stream_ctx = torch.cuda.stream(_cuda_stream) if _cuda_stream is not None else torch.no_grad()
+    decode_stream = _decode_stream()
+    if decode_stream is not None:
+        stream_ctx = torch.cuda.stream(decode_stream)
+    else:
+        stream_ctx = torch.no_grad()
+
     with stream_ctx, torch.inference_mode():
         audio_hat = _snac_model.decode(codes)
         audio_slice = audio_hat[:, :, 2048:4096]
         if device == "cuda":
+            if decode_stream is not None:
+                decode_stream.synchronize()
             audio_bytes = (audio_slice * 32767).to(torch.int16).cpu().numpy().tobytes()
         else:
             audio_np = audio_slice.detach().cpu().numpy()
@@ -178,8 +187,6 @@ def tokens_decoder_sync(syn_token_gen):
     thread = threading.Thread(target=run_async, daemon=True)
     thread.start()
 
-    # Yield each SNAC frame as soon as it is ready. Batching (e.g. 5 chunks) caused
-    # ~400ms bursts then silence — audible stutter in stream/live playback.
     while True:
         audio = audio_queue.get()
         if audio is None:

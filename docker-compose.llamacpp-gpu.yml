@@ -1,11 +1,12 @@
 # Lightning / NVIDIA GPU: lex-au GGUF via llama.cpp (CUDA) + SNAC inference gRPC.
 #
-# Usage:
-#   COMPOSE_FILE=docker-compose.yml:docker-compose.llamacpp-gpu.yml docker compose up --build -d
-#   LLAMACPP_REPLICAS=2 ./scripts/compose-up.sh llamacpp   # multi llama + nginx LB
+# Default layout (recommended on L40S):
+#   - 1× tuned llama-server (Q4, flash-attn, cont-batching, --parallel 48)
+#   - 3× inference gRPC replicas (SNAC decode parallelism; API round-robins)
 #
-# Scale: each replica loads Q8 GGUF on the same GPU (~5GB weights + KV per slot).
-# Use LLAMACPP_REPLICAS>1 with lower LLAMACPP_PARALLEL per replica (e.g. 2×8 not 2×16).
+# Usage:
+#   ./scripts/compose-up.sh llamacpp
+#   LLAMACPP_REPLICAS=2 ./scripts/compose-up.sh llamacpp   # optional multi-llama + nginx LB
 services:
   inference:
     build:
@@ -17,17 +18,17 @@ services:
       REQUIRE_REAL_INFERENCE: "true"
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
-      LLAMACPP_URL: http://llama-lb:5006/v1/completions
+      LLAMACPP_URL: ${LLAMACPP_URL:-http://llama-cpp-server:5006/v1/completions}
       SNAC_DEVICE: cuda
-      ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
-      ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q8_0.gguf}
+      ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q4_K_M.gguf}
+      ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q4_K_M.gguf}
       ORPHEUS_MAX_TOKENS: ${ORPHEUS_MAX_TOKENS:-8192}
       ORPHEUS_TEMPERATURE: ${ORPHEUS_TEMPERATURE:-0.6}
       ORPHEUS_TOP_P: ${ORPHEUS_TOP_P:-0.9}
       GRPC_MAX_WORKERS: ${GRPC_MAX_WORKERS:-48}
     volumes: []
     depends_on:
-      llama-lb:
+      llama-cpp-server:
         condition: service_healthy
     deploy:
       resources:
@@ -39,7 +40,9 @@ services:
     healthcheck:
       start_period: 600s
 
+  # Optional: enable with --profile llama-multiplex when LLAMACPP_REPLICAS>1
   llama-lb:
+    profiles: ["llama-multiplex"]
     image: nginx:1.27-alpine
     volumes:
       - ./deploy/nginx/llama-lb.conf:/etc/nginx/nginx.conf:ro
@@ -62,7 +65,7 @@ services:
         condition: service_completed_successfully
     command:
       - -m
-      - /models/${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
+      - /models/${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q4_K_M.gguf}
       - --host
       - "0.0.0.0"
       - --port
@@ -70,9 +73,22 @@ services:
       - -ngl
       - "99"
       - --ctx-size
-      - "8192"
+      - "${LLAMACPP_CTX_SIZE:-4096}"
       - --parallel
-      - "${LLAMACPP_PARALLEL:-16}"
+      - "${LLAMACPP_PARALLEL:-48}"
+      - --flash-attn
+      - "${LLAMACPP_FLASH_ATTN:-on}"
+      - --cont-batching
+      - --batch-size
+      - "${LLAMACPP_BATCH_SIZE:-512}"
+      - --ubatch-size
+      - "${LLAMACPP_UBATCH_SIZE:-256}"
+      - --cache-type-k
+      - "${LLAMACPP_CACHE_TYPE_K:-q4_0}"
+      - --cache-type-v
+      - "${LLAMACPP_CACHE_TYPE_V:-q4_0}"
+      - --prio
+      - "${LLAMACPP_PRIO:-2}"
     deploy:
       resources:
         reservations:
@@ -80,7 +96,6 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    # Image HEALTHCHECK curls :8080; we listen on :5006 — override or Compose shows "unhealthy".
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:5006/health"]
       interval: 30s
@@ -93,8 +108,8 @@ services:
     volumes:
       - gguf_models:/models
     environment:
-      ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
-      ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q8_0.gguf}
+      ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q4_K_M.gguf}
+      ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q4_K_M.gguf}
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
     entrypoint: ["/bin/sh", "-c"]

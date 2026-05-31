@@ -80,6 +80,27 @@ export API_URL=https://<your-studio-host>:8080
 ./scripts/bench_remote.sh all 12 1,4,8
 ```
 
+### L40S production profile (recommended)
+
+Single tuned **Q4** `llama-server` + **3× inference** gRPC replicas (SNAC parallelism):
+
+```bash
+# .env
+ORPHEUS_GGUF_MODEL=Orpheus-3b-FT-Q4_K_M.gguf
+ORPHEUS_GGUF_HF_REPO=lex-au/Orpheus-3b-FT-Q4_K_M.gguf
+LLAMACPP_REPLICAS=1
+LLAMACPP_PARALLEL=48
+LLAMACPP_CTX_SIZE=4096
+INFERENCE_REPLICAS=3
+INFERENCE_GRPC_ADDR=dns:///inference:50051
+MAX_CONCURRENT_SYNTHESIS=48
+RATE_LIMIT_RPM=5000   # bench only
+
+./scripts/compose-up.sh llamacpp
+```
+
+API uses gRPC **round_robin** across scaled `inference` containers. Each replica has its own GIL + per-thread CUDA SNAC streams.
+
 ### Multiple llama.cpp replicas (one L40S, keep Q8)
 
 Docker does not auto-balance HTTP by itself. This stack uses **nginx (`llama-lb`)** with `least_conn` over scaled `llama-cpp-server` containers (Docker DNS resolves all replicas).

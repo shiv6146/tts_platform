@@ -28,9 +28,17 @@ set_compose_file() {
 }
 
 wait_inference() {
-  echo "Waiting for inference gRPC health..."
-  for i in $(seq 1 90); do
-    if docker compose exec -T inference python -c "
+  echo "Waiting for inference gRPC health (all replicas)..."
+  local cids
+  cids=$(docker compose ps -q inference 2>/dev/null || true)
+  if [[ -z "$cids" ]]; then
+    echo "No inference containers" >&2
+    return 1
+  fi
+  for cid in $cids; do
+    name=$(docker inspect -f '{{.Name}}' "$cid" | sed 's#^/##')
+    for i in $(seq 1 90); do
+      if docker exec "$cid" python -c "
 import grpc,sys
 sys.path.insert(0,'/app/inference')
 from tts.v1 import inference_pb2,inference_pb2_grpc
@@ -39,12 +47,13 @@ r=inference_pb2_grpc.TTSInferenceStub(
 ).Health(inference_pb2.HealthRequest(), timeout=60)
 print('ok', r.ok, 'backend', getattr(r, 'backend', ''))
 sys.exit(0 if r.ok else 1)" 2>/dev/null; then
-      return 0
-    fi
-    sleep 10
+        echo "  $name healthy"
+        break
+      fi
+      [[ "$i" -eq 90 ]] && echo "  $name not healthy" >&2 && return 1
+      sleep 10
+    done
   done
-  echo "Inference not healthy — docker compose logs inference" >&2
-  return 1
 }
 
 wait_api() {
@@ -64,39 +73,57 @@ echo "COMPOSE_FILE=$COMPOSE_FILE"
 echo "Inference backend: $BACKEND"
 
 if [[ "$BACKEND" == "vllm" ]]; then
-  docker compose stop llama-cpp-server model-init 2>/dev/null || true
-  docker compose rm -f llama-cpp-server model-init 2>/dev/null || true
+  docker compose stop llama-cpp-server model-init llama-lb 2>/dev/null || true
+  docker compose rm -f llama-cpp-server model-init llama-lb 2>/dev/null || true
 fi
 
 LLAMACPP_REPLICAS="${LLAMACPP_REPLICAS:-1}"
+INFERENCE_REPLICAS="${INFERENCE_REPLICAS:-3}"
 UP_ARGS=(up -d)
 [[ "$BUILD" == "1" ]] && UP_ARGS=(up -d --build)
-if [[ "$BACKEND" == "llamacpp" && "$LLAMACPP_REPLICAS" =~ ^[0-9]+$ && "$LLAMACPP_REPLICAS" -gt 0 ]]; then
-  echo "llama-cpp-server replicas: $LLAMACPP_REPLICAS (via llama-lb nginx)"
-  UP_ARGS+=(--scale "llama-cpp-server=${LLAMACPP_REPLICAS}")
+
+if [[ "$BACKEND" == "llamacpp" ]]; then
+  echo "llama-cpp-server replicas: $LLAMACPP_REPLICAS"
+  echo "inference gRPC replicas: $INFERENCE_REPLICAS (API round_robin via dns:///inference:50051)"
+  if [[ "$LLAMACPP_REPLICAS" =~ ^[0-9]+$ && "$LLAMACPP_REPLICAS" -gt 1 ]]; then
+    UP_ARGS+=(--profile llama-multiplex)
+    export LLAMACPP_URL="${LLAMACPP_URL:-http://llama-lb:5006/v1/completions}"
+  else
+    export LLAMACPP_URL="${LLAMACPP_URL:-http://llama-cpp-server:5006/v1/completions}"
+  fi
+  if [[ "$LLAMACPP_REPLICAS" =~ ^[0-9]+$ && "$LLAMACPP_REPLICAS" -gt 0 ]]; then
+    UP_ARGS+=(--scale "llama-cpp-server=${LLAMACPP_REPLICAS}")
+  fi
 fi
+
+if [[ "$INFERENCE_REPLICAS" =~ ^[0-9]+$ && "$INFERENCE_REPLICAS" -gt 0 ]]; then
+  UP_ARGS+=(--scale "inference=${INFERENCE_REPLICAS}")
+fi
+
 docker compose "${UP_ARGS[@]}"
 
 if [[ "$BACKEND" == "llamacpp" ]]; then
   echo "Waiting for llama-cpp-server replicas (model load)..."
   for i in $(seq 1 40); do
     healthy=0
+    want="${LLAMACPP_REPLICAS:-1}"
     for cid in $(docker compose ps -q llama-cpp-server 2>/dev/null); do
       st=$(docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo starting)
       echo "  $(docker inspect -f '{{.Name}}' "$cid" | sed 's#^/##') health=$st"
       [[ "$st" == "healthy" ]] && healthy=$((healthy + 1))
     done
-    want="${LLAMACPP_REPLICAS:-1}"
     [[ "$healthy" -ge "$want" ]] && break
     sleep 15
   done
-  echo "Waiting for llama-lb..."
-  for i in $(seq 1 20); do
-    st=$(docker inspect -f '{{.State.Health.Status}}' tts_platform-llama-lb-1 2>/dev/null || echo starting)
-    echo "  llama-lb health=$st"
-    [[ "$st" == "healthy" ]] && break
-    sleep 5
-  done
+  if [[ "${LLAMACPP_REPLICAS:-1}" -gt 1 ]]; then
+    echo "Waiting for llama-lb..."
+    for i in $(seq 1 20); do
+      st=$(docker inspect -f '{{.State.Health.Status}}' tts_platform-llama-lb-1 2>/dev/null || echo starting)
+      echo "  llama-lb health=$st"
+      [[ "$st" == "healthy" ]] && break
+      sleep 5
+    done
+  fi
 fi
 
 wait_inference
