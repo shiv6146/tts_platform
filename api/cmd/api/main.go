@@ -108,7 +108,8 @@ func main() {
 	router.Group(func(pr chi.Router) {
 		pr.Use(auth.BearerMiddleware(pool))
 		pr.Use(rateLimitMiddleware(srv.Limiter))
-		pr.Mount("/", gen.HandlerFromMux(srv, pr))
+		apiRoutes := chi.NewRouter()
+		pr.Mount("/", gen.HandlerFromMux(srv, apiRoutes))
 	})
 
 	router.NotFound(ui.Handler().ServeHTTP)
