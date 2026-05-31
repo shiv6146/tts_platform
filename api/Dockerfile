@@ -1,6 +1,6 @@
 FROM oven/bun:1 AS web
 WORKDIR /web
-COPY web/package.json web/bun.lockb* ./
+COPY web/package.json web/bun.lock web/bun.lockb* ./
 RUN bun install
 COPY web/ ./
 COPY api/openapi.yaml /api/openapi.yaml
