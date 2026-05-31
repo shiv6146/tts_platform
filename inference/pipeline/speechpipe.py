@@ -145,7 +145,7 @@ async def tokens_decoder(token_gen):
 
 
 def tokens_decoder_sync(syn_token_gen):
-    from .. import hardware
+    import hardware
 
     max_queue_size = hardware.DECODER_QUEUE_SIZE if _snac_device == "cuda" else 8
     audio_queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
