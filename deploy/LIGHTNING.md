@@ -90,7 +90,7 @@ ORPHEUS_GGUF_MODEL=Orpheus-3b-FT-Q4_K_M.gguf
 ORPHEUS_GGUF_HF_REPO=lex-au/Orpheus-3b-FT-Q4_K_M.gguf
 LLAMACPP_REPLICAS=1
 LLAMACPP_PARALLEL=48
-LLAMACPP_CTX_SIZE=4096
+LLAMACPP_CTX_SIZE=8192   # 4096 truncates long lines (~50s audio cap); Q4 is fine at 8192 on L40S
 INFERENCE_REPLICAS=3
 INFERENCE_GRPC_ADDR=dns:///inference:50051
 MAX_CONCURRENT_SYNTHESIS=48
@@ -184,6 +184,7 @@ Only one GPU token backend at a time. The API always uses gRPC **`inference:5005
 | No Grafana on :3000 | Run `docker compose up -d` (all services); check `docker compose ps grafana` |
 | Build fails on vLLM | Confirm CUDA 12.4+ driver; rebuild `Dockerfile.gpu` |
 | Empty/small audio | Confirm `INFERENCE_MOCK=false`; check inference errors |
+| Audio cuts off mid-text | Raise `LLAMACPP_CTX_SIZE` (8192+); not usually Q4 — ctx limits audio tokens (~80/s). Use `ORPHEUS_BATCH_CHARS=400` for long inputs |
 
 ## Update
 

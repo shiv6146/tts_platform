@@ -24,8 +24,16 @@ def _timeout() -> int:
     return int(os.environ.get("ORPHEUS_API_TIMEOUT", "120"))
 
 
+def _ctx_size() -> int:
+    return int(os.environ.get("LLAMACPP_CTX_SIZE", "8192"))
+
+
 def _max_tokens() -> int:
-    return int(os.environ.get("ORPHEUS_MAX_TOKENS", "8192"))
+    """Cap generation to fit llama context (prompt + audio tokens share ctx)."""
+    ctx = _ctx_size()
+    default_cap = max(512, ctx - 128)
+    want = int(os.environ.get("ORPHEUS_MAX_TOKENS", str(default_cap)))
+    return min(want, default_cap)
 
 
 def _temperature() -> float:
