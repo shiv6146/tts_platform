@@ -145,7 +145,7 @@ def capture_live(api_url: str, api_key: str, text: str, voice: str) -> tuple[byt
     ws_url += "/v1/tts/live"
     parts: list[bytes] = []
     chunks: list[dict] = []
-    t0 = time.perf_counter()
+    phrase_start: float | None = None
     ws = websocket.create_connection(
         ws_url, header=[f"Authorization: Bearer {api_key}"], timeout=600
     )
@@ -158,6 +158,7 @@ def capture_live(api_url: str, api_key: str, text: str, voice: str) -> tuple[byt
                 j = json.loads(msg)
                 if j.get("type") == "ready" and not sent:
                     sent = True
+                    phrase_start = time.perf_counter()
                     ws.send(
                         json.dumps(
                             {
@@ -172,13 +173,13 @@ def capture_live(api_url: str, api_key: str, text: str, voice: str) -> tuple[byt
                     break
             else:
                 data = bytes(msg)
-                if not data:
+                if not data or phrase_start is None:
                     continue
                 chunks.append(
                     {
                         "index": len(chunks),
                         "bytes": len(data),
-                        "t_recv": round(time.perf_counter() - t0, 4),
+                        "t_recv": round(time.perf_counter() - phrase_start, 4),
                     }
                 )
                 parts.append(data)

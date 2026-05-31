@@ -72,7 +72,12 @@ Stream/live need **RTF &lt; 1**: `inter_chunk_gap_ms_avg` &lt; 85 (~85ms per SNA
 
 ```bash
 ./scripts/compose-up.sh llamacpp
-./scripts/bench_rtf.sh l40s_q8    # phase 1: gRPC, phase 2: API async/stream/live
+./scripts/bench_rtf.sh l40s_q8    # on-studio: gRPC then API
+
+# From your laptop against the public API URL:
+export API_URL=https://<your-studio-host>:8080
+./scripts/bench_remote.sh stream 8 1,4,8
+./scripts/bench_remote.sh all 12 1,4,8
 ```
 
 ## Monitoring (Grafana / Prometheus)
