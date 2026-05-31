@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import queue
 import sys
 import threading
+import uuid
 from typing import Generator, Optional
 
 log = logging.getLogger("inference.vllm")
@@ -14,6 +17,24 @@ _model = None
 _load_error: Optional[str] = None
 _lock = threading.Lock()
 _load_started = False
+
+# Single persistent event loop drives the shared AsyncLLMEngine so concurrent
+# requests are continuously batched. The vendor generate_tokens_sync() spawns a
+# fresh asyncio.run() loop per call, which deadlocks the engine under concurrency.
+_loop: Optional[asyncio.AbstractEventLoop] = None
+STOP_TOKEN_IDS = [49158]  # Orpheus audio end token (verified: stops at end of speech)
+
+
+def _ensure_loop() -> asyncio.AbstractEventLoop:
+    global _loop
+    if _loop is not None:
+        return _loop
+    with _lock:
+        if _loop is None:
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, name="vllm-loop", daemon=True).start()
+            _loop = loop
+    return _loop
 
 CHUNK_AUDIO_SEC = 2048 / 24000  # SNAC slice per yield (~85.3ms)
 
@@ -151,13 +172,57 @@ def make_token_generator(
         if _load_error:
             raise RuntimeError(f"vLLM model not loaded: {_load_error}")
         raise RuntimeError("vLLM model still loading")
-    rid = request_id or "req-001"
-    yield from _model.generate_tokens_sync(
-        prompt=prompt,
-        voice=voice,
-        request_id=rid,
+    from vllm import SamplingParams
+
+    rid = request_id or f"req-{uuid.uuid4().hex[:12]}"
+    engine = _model.engine
+    prompt_string = _model._format_prompt(prompt, voice)
+    sampling = SamplingParams(
         temperature=_temperature(),
         top_p=_top_p(),
         max_tokens=_max_tokens(),
+        stop_token_ids=STOP_TOKEN_IDS,
         repetition_penalty=REPETITION_PENALTY,
     )
+
+    loop = _ensure_loop()
+    q: "queue.Queue" = queue.Queue(maxsize=512)
+    sentinel = object()
+
+    async def _produce() -> None:
+        prev = ""
+        try:
+            async for out in engine.generate(
+                prompt=prompt_string, sampling_params=sampling, request_id=rid
+            ):
+                text = out.outputs[0].text
+                delta = text[len(prev):]
+                prev = text
+                if delta:
+                    q.put(delta)
+        except Exception as exc:  # propagate to consumer thread
+            q.put(exc)
+        finally:
+            q.put(sentinel)
+
+    fut = asyncio.run_coroutine_threadsafe(_produce(), loop)
+
+    def _gen() -> Generator[str, None, None]:
+        try:
+            while True:
+                item = q.get()
+                if item is sentinel:
+                    break
+                if isinstance(item, BaseException):
+                    raise item
+                # Split into individual <custom_token_*> like the llama.cpp path so
+                # the SNAC decoder never sees two audio tokens fused in one yield.
+                for piece in item.split(">"):
+                    tok = f"{piece}>"
+                    if tok and tok != ">":
+                        yield tok
+        finally:
+            if not fut.done():
+                loop.call_soon_threadsafe(fut.cancel)
+
+    return _gen()
