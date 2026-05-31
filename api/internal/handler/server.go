@@ -32,6 +32,16 @@ type Server struct {
 	Publisher *billing.Publisher
 	Limiter   *ratelimit.Limiter
 	Cfg       config.Config
+	Live      http.Handler // WebSocket live TTS (set from main)
+}
+
+// LiveTTSWebSocket implements gen.ServerInterface for OpenAPI /v1/tts/live.
+func (s *Server) LiveTTSWebSocket(w http.ResponseWriter, r *http.Request) {
+	if s.Live != nil {
+		s.Live.ServeHTTP(w, r)
+		return
+	}
+	http.Error(w, "live TTS not configured", http.StatusInternalServerError)
 }
 
 func (s *Server) GetHealth(w http.ResponseWriter, r *http.Request) {

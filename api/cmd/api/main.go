@@ -74,6 +74,14 @@ func main() {
 		log.Printf("default API key (save now): %s", devKey)
 	}
 
+	live := &ws.LiveHandler{
+		Inference:  inf,
+		Wallets:    wallets,
+		Publisher:  billing.NewPublisher(nc),
+		Coalesce:   cfg.BillingCoalesce,
+		RefreshBal: cfg.DeliveryRefreshWS,
+	}
+
 	srv := &handler.Server{
 		Pool:      pool,
 		Wallets:   wallets,
@@ -81,14 +89,7 @@ func main() {
 		Publisher: billing.NewPublisher(nc),
 		Limiter:   ratelimit.New(rdb, cfg.RateLimitRPM, cfg.RateLimitRPH, cfg.RateLimitRPD),
 		Cfg:       cfg,
-	}
-
-	live := &ws.LiveHandler{
-		Inference:  inf,
-		Wallets:    wallets,
-		Publisher:  billing.NewPublisher(nc),
-		Coalesce:   cfg.BillingCoalesce,
-		RefreshBal: cfg.DeliveryRefreshWS,
+		Live:      live,
 	}
 
 	router := chi.NewRouter()
@@ -103,7 +104,6 @@ func main() {
 		pr.Use(auth.BearerMiddleware(pool))
 		pr.Use(rateLimitMiddleware(srv.Limiter))
 		pr.Mount("/", gen.HandlerFromMux(srv, pr))
-		pr.Get("/v1/tts/live", live.ServeHTTP)
 	})
 
 	addr := ":" + cfg.APIPort
