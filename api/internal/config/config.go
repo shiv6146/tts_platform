@@ -24,6 +24,7 @@ type Config struct {
 	DeliveryRefreshWS              time.Duration
 	MetricsWalletPerUser           bool
 	MaxConcurrentSynthesis         int
+	PlatformAdminKey               string
 }
 
 func Load() Config {
@@ -44,7 +45,8 @@ func Load() Config {
 		DeliveryRefreshStream:         time.Duration(envInt("DELIVERY_BALANCE_REFRESH_STREAM_SEC", 5)) * time.Second,
 		DeliveryRefreshWS:             time.Duration(envInt("DELIVERY_BALANCE_REFRESH_WS_SEC", 2)) * time.Second,
 		MetricsWalletPerUser:          env("METRICS_WALLET_PER_USER", "false") == "true",
-		MaxConcurrentSynthesis:          envInt("MAX_CONCURRENT_SYNTHESIS", 4),
+		MaxConcurrentSynthesis:          envInt("MAX_CONCURRENT_SYNTHESIS", 16),
+		PlatformAdminKey:              env("PLATFORM_ADMIN_KEY", ""),
 	}
 }
 

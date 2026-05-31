@@ -15,6 +15,7 @@ import (
 	"github.com/tts-platform/api/internal/cache"
 	"github.com/tts-platform/api/internal/grpcclient"
 	"github.com/tts-platform/api/internal/metrics"
+	"github.com/tts-platform/api/internal/synthlimit"
 )
 
 var upgrader = websocket.Upgrader{
@@ -40,6 +41,7 @@ type LiveHandler struct {
 	Inference            *grpcclient.Client
 	Wallets              *cache.WalletCache
 	Publisher            *billing.Publisher
+	Synth                *synthlimit.Limiter
 	Coalesce             time.Duration
 	RefreshBal           time.Duration
 	MetricsWalletPerUser bool
@@ -98,6 +100,13 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.observeWallet(r.Context(), u.ID)
+	if h.Synth != nil {
+		if err := h.Synth.Acquire(r.Context()); err != nil {
+			http.Error(w, "synthesis capacity exceeded", http.StatusServiceUnavailable)
+			return
+		}
+		defer h.Synth.Release()
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return

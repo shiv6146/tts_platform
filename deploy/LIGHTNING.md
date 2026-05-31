@@ -80,6 +80,39 @@ export API_URL=https://<your-studio-host>:8080
 ./scripts/bench_remote.sh all 12 1,4,8
 ```
 
+### Concurrency (40 streams on L40S)
+
+Remote bench (`bench_remote_out/remote/manifest.json`) shows **queueing**, not broken streaming:
+
+| Metric | c=1 | c=4 |
+|--------|-----|-----|
+| TTFB p95 | ~1.2s | ~9.4s |
+| Inter-chunk gap | ~51ms | ~51ms |
+| RTF (streaming) | ~0.60 | ~0.60 |
+| Throughput | ~1.16 audio-s/s | ~0.44 audio-s/s |
+
+Once audio starts, each stream stays real-time (RTF &lt; 1). TTFB grows because **llama.cpp was `--parallel 1`** — only one GGUF sequence on GPU at a time.
+
+Tune in `.env` (then recreate `llama-cpp-server`, `inference`, `api`):
+
+```bash
+LLAMACPP_PARALLEL=16          # llama.cpp concurrent slots (VRAM ↑ with parallel × ctx)
+MAX_CONCURRENT_SYNTHESIS=16   # API admission; 503 when full (not 12s queue)
+GRPC_MAX_WORKERS=48           # inference gRPC thread pool
+```
+
+For **40 concurrent** on one L40S:
+
+1. **Raise parallel** toward 32–40; use **Q4** (`Orpheus-3b-FT-Q4_K_M.gguf`) if VRAM is tight at high `--parallel`.
+2. Set `MAX_CONCURRENT_SYNTHESIS` ≈ `LLAMACPP_PARALLEL` so clients get fast **503** instead of silent queue.
+3. Expect **RTF and gap to worsen** above ~8–16 simultaneous GPU decodes — physics on one GPU.
+4. For **40 streams all with low TTFB**, scale out (multiple GPUs / llama replicas + load balancer) or use **vLLM continuous batching** (`./scripts/compose-up.sh vllm`).
+
+```bash
+export API_URL=https://<host>:8080
+./scripts/bench_remote.sh stream 8 1,4,8,16,32,40
+```
+
 ## Monitoring (Grafana / Prometheus)
 
 Both are defined in `docker-compose.yml`. Start the **full** stack (not only `api` / `inference`):
@@ -108,6 +141,8 @@ Only one GPU token backend at a time. The API always uses gRPC **`inference:5005
 |---------|--------|
 | CUDA OOM | Lower `VLLM_GPU_MEMORY_UTILIZATION` to `0.75` in `.env` |
 | Stream/live stutter, async OK | GPU too slow (RTF&gt;1); upgrade GPU or use async |
+| TTFB spikes at low concurrency | Raise `LLAMACPP_PARALLEL`; align `MAX_CONCURRENT_SYNTHESIS` |
+| HTTP 503 synthesis capacity | Expected when at limit; raise parallel or scale out |
 | Health never OK | `docker compose logs inference` — wait for model load |
 | `llama-cpp-server` unhealthy | `curl -f http://127.0.0.1:5006/health` inside container; recreate after compose healthcheck fix |
 | No Grafana on :3000 | Run `docker compose up -d` (all services); check `docker compose ps grafana` |

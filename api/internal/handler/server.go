@@ -23,6 +23,7 @@ import (
 	"github.com/tts-platform/api/internal/grpcclient"
 	"github.com/tts-platform/api/internal/metrics"
 	"github.com/tts-platform/api/internal/ratelimit"
+	"github.com/tts-platform/api/internal/synthlimit"
 )
 
 type Server struct {
@@ -31,6 +32,7 @@ type Server struct {
 	Inference *grpcclient.Client
 	Publisher *billing.Publisher
 	Limiter   *ratelimit.Limiter
+	Synth     *synthlimit.Limiter
 	Cfg       config.Config
 	Live      http.Handler // WebSocket live TTS (set from main)
 }
@@ -248,6 +250,20 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, userID uuid.UUID)
 	return snap, true
 }
 
+func (s *Server) acquireSynthesis(w http.ResponseWriter, r *http.Request) bool {
+	if s.Synth == nil {
+		return true
+	}
+	if err := s.Synth.Acquire(r.Context()); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return false
+		}
+		http.Error(w, "synthesis capacity exceeded", http.StatusServiceUnavailable)
+		return false
+	}
+	return true
+}
+
 func (s *Server) CreateAsyncTTS(w http.ResponseWriter, r *http.Request) {
 	u, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -284,6 +300,14 @@ func (s *Server) CreateAsyncTTS(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) runAsyncJob(jobID, userID uuid.UUID, text, voice string, snap cache.WalletSnapshot) {
 	ctx := context.Background()
+	if s.Synth != nil {
+		if err := s.Synth.Acquire(ctx); err != nil {
+			msg := "synthesis capacity exceeded"
+			_, _ = s.Pool.Exec(ctx, `UPDATE tts_jobs SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`, jobID, msg)
+			return
+		}
+		defer s.Synth.Release()
+	}
 	_, _ = s.Pool.Exec(ctx, `UPDATE tts_jobs SET status = 'running', updated_at = now() WHERE id = $1`, jobID)
 	requestID := jobID.String()
 	stream, err := s.Inference.Synthesize(ctx, requestID, text, voice)
@@ -393,6 +417,10 @@ func (s *Server) StreamTTS(w http.ResponseWriter, r *http.Request) {
 	if req.Voice != nil {
 		voice = *req.Voice
 	}
+	if !s.acquireSynthesis(w, r) {
+		return
+	}
+	defer s.Synth.Release()
 	requestID := uuid.New().String()
 	stream, err := s.Inference.Synthesize(r.Context(), requestID, req.Text, voice)
 	if err != nil {

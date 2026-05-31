@@ -27,6 +27,7 @@ import (
 	"github.com/tts-platform/api/internal/handler"
 	"github.com/tts-platform/api/internal/metrics"
 	"github.com/tts-platform/api/internal/ratelimit"
+	"github.com/tts-platform/api/internal/synthlimit"
 	"github.com/tts-platform/api/internal/ui"
 	"github.com/tts-platform/api/internal/ws"
 )
@@ -81,8 +82,19 @@ func main() {
 		log.Printf("default API key (save now): %s", devKey)
 	}
 
+	synthLim := synthlimit.New(cfg.MaxConcurrentSynthesis)
+	log.Printf("max concurrent synthesis: %d", cfg.MaxConcurrentSynthesis)
+
+	rlStore := ratelimit.NewStore(rdb, pool, ratelimit.Limits{
+		RPM: cfg.RateLimitRPM,
+		RPH: cfg.RateLimitRPH,
+		RPD: cfg.RateLimitRPD,
+	})
+	rl := ratelimit.New(rdb, rlStore)
+
 	live := &ws.LiveHandler{
 		Inference:            inf,
+		Synth:                synthLim,
 		Wallets:              wallets,
 		Publisher:            billing.NewPublisher(nc),
 		Coalesce:             cfg.BillingCoalesce,
@@ -95,7 +107,8 @@ func main() {
 		Wallets:   wallets,
 		Inference: inf,
 		Publisher: billing.NewPublisher(nc),
-		Limiter:   ratelimit.New(rdb, cfg.RateLimitRPM, cfg.RateLimitRPH, cfg.RateLimitRPD),
+		Limiter:   rl,
+		Synth:     synthLim,
 		Cfg:       cfg,
 		Live:      live,
 	}
@@ -108,6 +121,12 @@ func main() {
 	router.Get("/health", srv.GetHealth)
 	router.Get("/livez", srv.GetHealth)
 	router.Get("/v1/meta/inference", srv.GetMetaInference)
+	router.Route("/v1/admin", func(ar chi.Router) {
+		ar.Use(handler.AdminMiddleware(cfg.PlatformAdminKey))
+		ar.Get("/users/{userId}/rate-limit", srv.AdminGetUserRateLimit)
+		ar.Put("/users/{userId}/rate-limit", srv.AdminSetUserRateLimit)
+		ar.Delete("/users/{userId}/rate-limit", srv.AdminDeleteUserRateLimit)
+	})
 	router.Post("/v1/auth/register", srv.RegisterUser)
 	router.Post("/v1/auth/login", srv.LoginUser)
 	router.Post("/v1/auth/logout", srv.LogoutUser)
@@ -120,6 +139,7 @@ func main() {
 
 	router.Group(func(pr chi.Router) {
 		pr.Use(auth.BearerMiddleware(pool))
+		pr.Get("/v1/account/rate-limit", srv.GetAccountRateLimit)
 		pr.Use(rateLimitMiddleware(srv.Limiter))
 		apiRoutes := chi.NewRouter()
 		pr.Mount("/", gen.HandlerFromMux(srv, apiRoutes))

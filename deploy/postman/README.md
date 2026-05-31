@@ -10,6 +10,17 @@
 
 OpenAPI source: `api/openapi.yaml` · Swagger UI: `{baseUrl}/docs`
 
+### Per-user rate limits
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/v1/account/rate-limit` | User API key |
+| GET | `/v1/admin/users/{userId}/rate-limit` | `PLATFORM_ADMIN_KEY` (`X-Admin-Key` or Bearer) |
+| PUT | `/v1/admin/users/{userId}/rate-limit` | Admin — body `{"rpm":120,"rph":5000,"rpd":50000}` |
+| DELETE | `/v1/admin/users/{userId}/rate-limit` | Admin — clears override, restores env defaults |
+
+Global defaults: `RATE_LIMIT_RPM`, `RATE_LIMIT_RPH`, `RATE_LIMIT_RPD` in `.env`.
+
 ## Ports to expose publicly
 
 Current `docker-compose.yml` only publishes some services on the host. For Lightning (or any cloud), expose what you need:

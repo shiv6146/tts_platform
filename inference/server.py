@@ -117,14 +117,16 @@ def serve():
     if pb2 is None:
         raise SystemExit("missing generated protobuf stubs")
 
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+    workers = int(os.environ.get("GRPC_MAX_WORKERS", "48"))
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=workers))
     pb2_grpc.add_TTSInferenceServicer_to_server(Servicer(pb2, pb2_grpc), server)
     listen = f"[::]:{GRPC_PORT}"
     server.add_insecure_port(listen)
     log.info(
-        "inference listening on %s backend=%s",
+        "inference listening on %s backend=%s grpc_workers=%d",
         listen,
         os.environ.get("INFERENCE_BACKEND", "auto"),
+        workers,
     )
     server.start()
     server.wait_for_termination()

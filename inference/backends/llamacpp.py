@@ -88,6 +88,9 @@ def server_ready() -> bool:
     return _server_ready
 
 
+_http = requests.Session()
+
+
 def make_token_generator(
     prompt: str,
     voice: str,
@@ -105,8 +108,7 @@ def make_token_generator(
         "stream": True,
         "model": _model_name(),
     }
-    session = requests.Session()
-    response = session.post(
+    response = _http.post(
         _api_url(),
         headers={"Content-Type": "application/json"},
         json=payload,

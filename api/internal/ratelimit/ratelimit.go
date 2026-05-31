@@ -12,16 +12,22 @@ import (
 
 type Limiter struct {
 	redis *redis.Client
-	rpm   int
-	rph   int
-	rpd   int
+	store *Store
 }
 
-func New(redis *redis.Client, rpm, rph, rpd int) *Limiter {
-	return &Limiter{redis: redis, rpm: rpm, rph: rph, rpd: rpd}
+func New(redis *redis.Client, store *Store) *Limiter {
+	return &Limiter{redis: redis, store: store}
+}
+
+func (l *Limiter) Store() *Store {
+	return l.store
 }
 
 func (l *Limiter) Allow(ctx context.Context, userID uuid.UUID) (bool, time.Duration, error) {
+	lim, _, err := l.store.Effective(ctx, userID)
+	if err != nil {
+		return false, 0, err
+	}
 	now := time.Now().UTC()
 	minute := now.Unix() / 60
 	hour := now.Unix() / 3600
@@ -32,7 +38,7 @@ func (l *Limiter) Allow(ctx context.Context, userID uuid.UUID) (bool, time.Durat
 		fmt.Sprintf("rl:%s:h:%d", uid, hour),
 		fmt.Sprintf("rl:%s:d:%d", uid, day),
 	}
-	limits := []int{l.rpm, l.rph, l.rpd}
+	limits := []int{lim.RPM, lim.RPH, lim.RPD}
 	expiries := []time.Duration{120 * time.Second, 7200 * time.Second, 172800 * time.Second}
 
 	pipe := l.redis.Pipeline()
