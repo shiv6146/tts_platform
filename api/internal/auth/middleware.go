@@ -22,9 +22,19 @@ func UserFromContext(ctx context.Context) (User, bool) {
 	return u, ok
 }
 
+// Paths served by the OpenAPI mux behind BearerMiddleware but declared public in openapi.yaml.
+var publicPaths = map[string]struct{}{
+	"/health":            {},
+	"/v1/auth/register":  {},
+}
+
 func BearerMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := publicPaths[r.URL.Path]; ok {
+				next.ServeHTTP(w, r)
+				return
+			}
 			h := r.Header.Get("Authorization")
 			if h == "" || !strings.HasPrefix(h, "Bearer ") {
 				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)

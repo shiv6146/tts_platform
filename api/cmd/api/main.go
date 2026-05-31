@@ -98,6 +98,7 @@ func main() {
 	router.Handle("/metrics", promhttp.Handler())
 	router.Mount("/docs", http.StripPrefix("/docs", docs.Handler()))
 	router.Get("/health", srv.GetHealth)
+	router.Get("/livez", srv.GetHealth)
 	router.Post("/v1/auth/register", srv.RegisterUser)
 
 	router.Group(func(pr chi.Router) {
