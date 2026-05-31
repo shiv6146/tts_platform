@@ -19,7 +19,7 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
       LLAMACPP_URL: ${LLAMACPP_URL:-http://llama-cpp-server:5006/v1/completions}
-      SNAC_DEVICE: cuda
+      SNAC_DEVICE: ${SNAC_DEVICE:-cuda}
       ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q4_K_M.gguf}
       ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q4_K_M.gguf}
       ORPHEUS_MAX_TOKENS: ${ORPHEUS_MAX_TOKENS:-4096}
