@@ -70,29 +70,39 @@ services:
       start_period: 180s
 
   model-init:
-    image: curlimages/curl:latest
+    image: python:3.11-slim
     volumes:
       - gguf_models:/models
     environment:
       ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
       ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q8_0.gguf}
       HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         set -e
-        f="/models/$${ORPHEUS_GGUF_MODEL}"
-        repo="$${ORPHEUS_GGUF_HF_REPO}"
-        if [ ! -f "$$f" ]; then
-          echo "Downloading https://huggingface.co/$${repo}/resolve/main/$${ORPHEUS_GGUF_MODEL} ..."
-          if [ -n "$${HF_TOKEN}" ]; then
-            curl -fsSL -H "Authorization: Bearer $${HF_TOKEN}" \
-              -o "$$f" "https://huggingface.co/$${repo}/resolve/main/$${ORPHEUS_GGUF_MODEL}"
-          else
-            curl -fsSL -o "$$f" "https://huggingface.co/$${repo}/resolve/main/$${ORPHEUS_GGUF_MODEL}"
-          fi
-        fi
-        ls -lh "$$f"
+        pip install -q --no-cache-dir huggingface_hub
+        python <<'PY'
+        import os
+        import shutil
+        from huggingface_hub import hf_hub_download
+        model = os.environ["ORPHEUS_GGUF_MODEL"]
+        repo = os.environ["ORPHEUS_GGUF_HF_REPO"]
+        dest = f"/models/{model}"
+        token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+        if os.path.isfile(dest) and os.path.getsize(dest) > 1_000_000:
+            print("GGUF already present:", dest, os.path.getsize(dest))
+        else:
+            path = hf_hub_download(
+                repo_id=repo,
+                filename=model,
+                token=token,
+            )
+            if os.path.abspath(path) != os.path.abspath(dest):
+                shutil.copy2(path, dest)
+            print("Downloaded:", dest, os.path.getsize(dest))
+        PY
 
 volumes:
   gguf_models:
