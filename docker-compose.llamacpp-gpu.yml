@@ -20,7 +20,7 @@ services:
     volumes: []
     depends_on:
       llama-cpp-server:
-        condition: service_healthy
+        condition: service_started
     deploy:
       resources:
         reservations:
@@ -58,16 +58,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -q -O- http://127.0.0.1:5006/health >/dev/null 2>&1 || exit 1",
-        ]
-      interval: 15s
-      timeout: 10s
-      retries: 40
-      start_period: 180s
+    # server-cuda image has no wget/curl; rely on logs ("server is listening") + service_started
 
   model-init:
     image: python:3.11-slim
