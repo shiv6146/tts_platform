@@ -11,7 +11,6 @@ models/
 __pycache__/
 *.pyc
 .pytest_cache/
-api/internal/gen/
 gen/
 # Go protobuf (api/grpc generated — committed for Docker builds)
 # *.pb.go
