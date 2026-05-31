@@ -182,6 +182,17 @@ func (s *Server) ListUsage(w http.ResponseWriter, r *http.Request, params gen.Li
 	writeJSON(w, http.StatusOK, gen.UsageListResponse{Items: &items, Total: &total})
 }
 
+func (s *Server) observeWallet(ctx context.Context, userID uuid.UUID) {
+	if !s.Cfg.MetricsWalletPerUser {
+		return
+	}
+	snap, err := s.Wallets.Get(ctx, userID)
+	if err != nil {
+		return
+	}
+	metrics.ObserveWalletBalance(true, userID, snap.BalanceUSD)
+}
+
 func (s *Server) admit(w http.ResponseWriter, r *http.Request, userID uuid.UUID) (cache.WalletSnapshot, bool) {
 	ok, snap, err := s.Wallets.HasBalance(r.Context(), userID)
 	if err != nil {
@@ -192,6 +203,7 @@ func (s *Server) admit(w http.ResponseWriter, r *http.Request, userID uuid.UUID)
 		http.Error(w, "insufficient balance", http.StatusPaymentRequired)
 		return cache.WalletSnapshot{}, false
 	}
+	s.observeWallet(r.Context(), userID)
 	return snap, true
 }
 
@@ -239,21 +251,38 @@ func (s *Server) runAsyncJob(jobID, userID uuid.UUID, text, voice string, snap c
 		_, _ = s.Pool.Exec(ctx, `UPDATE tts_jobs SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`, jobID, msg)
 		return
 	}
+	metrics.ActiveStreams.Inc()
+	defer metrics.ActiveStreams.Dec()
+
 	var pcm []byte
 	coal := billing.NewCoalescer(s.Publisher, userID, requestID, "http_async", s.Cfg.BillingCoalesce)
 	budget := snap.BalanceUSD
+	start := time.Now()
+	var audioSeconds float64
+	var first bool
 	err = grpcclient.CopyAudioStream(ctx, stream, func(chunk []byte, sampleRate int32, _ int64) error {
+		if !first {
+			first = true
+			metrics.TTFB.WithLabelValues("http_async").Observe(time.Since(start).Seconds())
+		}
 		sec := billing.SecondsFromPCM(len(chunk), int(sampleRate))
 		budget -= billing.CostForSeconds(sec, snap.PricePerAudioMinuteUSD)
 		if budget < 0 {
 			return fmt.Errorf("insufficient balance")
 		}
+		audioSeconds += sec
 		pcm = append(pcm, chunk...)
 		_ = coal.AddPCM(len(chunk), int(sampleRate))
 		metrics.AudioSeconds.WithLabelValues("http_async").Add(sec)
 		return nil
 	})
 	_ = coal.Flush()
+	proc := time.Since(start).Seconds()
+	if audioSeconds > 0 {
+		metrics.RTF.WithLabelValues("http_async").Observe(proc / audioSeconds)
+	}
+	metrics.RequestDuration.WithLabelValues("/v1/tts/async", "http_async").Observe(proc)
+	s.observeWallet(ctx, userID)
 	if err != nil {
 		msg := err.Error()
 		_, _ = s.Pool.Exec(ctx, `UPDATE tts_jobs SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`, jobID, msg)
@@ -368,6 +397,7 @@ func (s *Server) StreamTTS(w http.ResponseWriter, r *http.Request) {
 			snap, _ = s.Wallets.Refresh(r.Context(), u.ID)
 			budget = snap.BalanceUSD
 			lastRefresh = time.Now()
+			s.observeWallet(r.Context(), u.ID)
 		}
 		return nil
 	})
@@ -377,6 +407,7 @@ func (s *Server) StreamTTS(w http.ResponseWriter, r *http.Request) {
 		metrics.RTF.WithLabelValues("http_stream").Observe(proc / audioSeconds)
 	}
 	metrics.RequestDuration.WithLabelValues("/v1/tts/stream", "http_stream").Observe(proc)
+	s.observeWallet(r.Context(), u.ID)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return
 	}

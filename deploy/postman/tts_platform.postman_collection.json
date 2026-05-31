@@ -1,0 +1,237 @@
+{
+  "info": {
+    "_postman_id": "tts-platform-orpheus",
+    "name": "Orpheus TTS Platform",
+    "description": "HTTP API for the Orpheus TTS platform.\n\n**Auth:** Most routes need `Authorization: Bearer sk-...`. Set the `apiKey` collection variable (from `docker compose logs api` → \"default API key\" on first boot, or create via Register + Create API Key).\n\n**Live TTS:** Use Postman's WebSocket request on `GET {{baseUrl}}/v1/tts/live` with the same Bearer token. Send JSON: `{\"type\":\"text\",\"text\":\"Hello\",\"final\":true}`. Response: binary PCM (s16le, 24 kHz mono) and JSON control messages.\n\n**Stream TTS:** POST `/v1/tts/stream` returns raw PCM chunks (`application/octet-stream`). Save response as `.pcm` or wrap in WAV.\n\n**Docs:** Swagger UI at `{{baseUrl}}/docs`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiKey}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "description": "sk-... from api logs or POST /v1/auth/api-keys"
+    },
+    {
+      "key": "jobId",
+      "value": "",
+      "description": "UUID from async TTS create"
+    },
+    {
+      "key": "keyId",
+      "value": "",
+      "description": "API key UUID for revoke"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & ops",
+      "item": [
+        {
+          "name": "Liveness (health)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "Liveness (livez)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/livez"
+          }
+        },
+        {
+          "name": "Prometheus metrics (API)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/metrics",
+            "description": "Prometheus exposition format. Also scraped by the prometheus service."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register user",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"myuser\",\n  \"password\": \"changeme123\"\n}"
+            },
+            "url": "{{baseUrl}}/v1/auth/register"
+          }
+        },
+        {
+          "name": "Create API key",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/v1/auth/api-keys",
+            "description": "Secret `sk-...` returned once in response body."
+          }
+        },
+        {
+          "name": "List API keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/auth/api-keys"
+          }
+        },
+        {
+          "name": "Revoke API key",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/v1/auth/api-keys/{{keyId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Wallet & usage",
+      "item": [
+        {
+          "name": "Get wallet",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/wallet"
+          }
+        },
+        {
+          "name": "List usage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/usage?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "usage"],
+              "query": [
+                { "key": "limit", "value": "50" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "TTS",
+      "item": [
+        {
+          "name": "Stream TTS (chunked PCM)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello from Postman. This is a streaming synthesis test.\",\n  \"voice\": \"tara\"\n}"
+            },
+            "url": "{{baseUrl}}/v1/tts/stream",
+            "description": "Response: application/octet-stream (PCM s16le, 24 kHz mono)."
+          }
+        },
+        {
+          "name": "Create async TTS job",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 202) {",
+                  "  const j = pm.response.json();",
+                  "  if (j.jobId) pm.collectionVariables.set('jobId', j.jobId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello from async TTS.\",\n  \"voice\": \"tara\"\n}"
+            },
+            "url": "{{baseUrl}}/v1/tts/async"
+          }
+        },
+        {
+          "name": "Get async job status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/tts/async/{{jobId}}"
+          }
+        },
+        {
+          "name": "Download async job audio (WAV)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/tts/async/{{jobId}}/audio",
+            "description": "Available when status is completed."
+          }
+        },
+        {
+          "name": "Live TTS (WebSocket)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/tts/live",
+            "description": "In Postman: change protocol to WebSocket (ws:// or wss://). Add header Authorization: Bearer {{apiKey}}. Send: {\"type\":\"text\",\"text\":\"Hello\",\"final\":true}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Metering (direct)",
+      "item": [
+        {
+          "name": "Metering Prometheus metrics",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": "http://localhost:8081/metrics",
+            "description": "Metering service metrics (host port 8081 when compose publishes it). Prefer Grafana dashboards that read from Prometheus."
+          }
+        }
+      ]
+    }
+  ]
+}

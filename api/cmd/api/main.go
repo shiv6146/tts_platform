@@ -75,11 +75,12 @@ func main() {
 	}
 
 	live := &ws.LiveHandler{
-		Inference:  inf,
-		Wallets:    wallets,
-		Publisher:  billing.NewPublisher(nc),
-		Coalesce:   cfg.BillingCoalesce,
-		RefreshBal: cfg.DeliveryRefreshWS,
+		Inference:            inf,
+		Wallets:              wallets,
+		Publisher:            billing.NewPublisher(nc),
+		Coalesce:             cfg.BillingCoalesce,
+		RefreshBal:           cfg.DeliveryRefreshWS,
+		MetricsWalletPerUser: cfg.MetricsWalletPerUser,
 	}
 
 	srv := &handler.Server{

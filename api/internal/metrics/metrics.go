@@ -10,7 +10,7 @@ var (
 	TTFB = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "tts_time_to_first_byte_seconds",
 		Help:    "Time to first audio byte delivered to client",
-		Buckets: prometheus.ExponentialBuckets(0.05, 2, 10),
+		Buckets: append([]float64{0.01, 0.025}, prometheus.ExponentialBuckets(0.05, 2, 10)...),
 	}, []string{"transport"})
 
 	RequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -48,7 +48,7 @@ var (
 
 	WalletBalance = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "wallet_balance_usd",
-		Help: "Per-user wallet balance (dev only)",
+		Help: "Per-user wallet balance (METRICS_WALLET_PER_USER)",
 	}, []string{"user_id"})
 )
 

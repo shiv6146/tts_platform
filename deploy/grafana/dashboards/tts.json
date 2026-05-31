@@ -3,50 +3,168 @@
   "uid": "tts-platform",
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
+  "refresh": "10s",
+  "tags": ["tts"],
+  "templating": { "list": [] },
   "panels": [
     {
       "type": "timeseries",
-      "title": "TTFB (p95)",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "title": "TTFB p95 (per interval)",
+      "description": "Uses increase() so sparse traffic is visible. Empty when no requests in the selected window.",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(tts_time_to_first_byte_seconds_bucket[5m])) by (le, transport))",
+          "expr": "histogram_quantile(0.95, sum(increase(tts_time_to_first_byte_seconds_bucket[$__rate_interval])) by (le, transport))",
+          "legendFormat": "p95 {{transport}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "TTFB avg (per interval)",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "sum(increase(tts_time_to_first_byte_seconds_sum[$__rate_interval])) by (transport) / sum(increase(tts_time_to_first_byte_seconds_count[$__rate_interval])) by (transport)",
+          "legendFormat": "avg {{transport}}"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "TTFB avg (since process start)",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "sum(tts_time_to_first_byte_seconds_sum) by (transport) / sum(tts_time_to_first_byte_seconds_count) by (transport)",
           "legendFormat": "{{transport}}"
         }
       ]
     },
     {
       "type": "timeseries",
-      "title": "Active streams",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
-      "targets": [{"expr": "tts_active_streams"}]
+      "title": "Active streams (current)",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus" },
+      "targets": [{ "expr": "tts_active_streams", "legendFormat": "active" }]
     },
     {
       "type": "timeseries",
-      "title": "Audio seconds generated",
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8},
+      "title": "Active streams (peak per interval)",
+      "description": "Captures short streams between Prometheus scrapes (15s).",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "datasource": { "type": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(tts_audio_seconds_generated_total[5m])) by (transport)",
+          "expr": "max_over_time(tts_active_streams[$__interval])",
+          "legendFormat": "peak"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Audio seconds (per interval)",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "sum(increase(tts_audio_seconds_generated_total[$__rate_interval])) by (transport)",
           "legendFormat": "{{transport}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Request duration p95",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(increase(tts_request_duration_seconds_bucket[$__rate_interval])) by (le, route, transport))",
+          "legendFormat": "{{route}} {{transport}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Realtime factor p95",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(increase(tts_realtime_factor_bucket[$__rate_interval])) by (le, transport))",
+          "legendFormat": "p95 {{transport}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Wallet balance (USD)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } },
+      "targets": [
+        {
+          "expr": "wallet_balance_usd",
+          "legendFormat": "{{user_id}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP latency p95",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(increase(http_request_duration_seconds_bucket[$__rate_interval])) by (le, route))",
+          "legendFormat": "{{route}}"
         }
       ]
     },
     {
       "type": "timeseries",
       "title": "Metering events",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
-      "targets": [{"expr": "rate(metering_events_processed_total[5m])"}]
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "increase(metering_events_processed_total[$__rate_interval])",
+          "legendFormat": "events"
+        }
+      ]
     },
     {
       "type": "timeseries",
-      "title": "HTTP latency p95",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "title": "Metering debit errors",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "datasource": { "type": "prometheus" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route))",
-          "legendFormat": "{{route}}"
+          "expr": "increase(metering_debit_errors_total[$__rate_interval])",
+          "legendFormat": "errors"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Wallet cache L2 misses",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 40 },
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "increase(cache_l2_miss_total[$__rate_interval])",
+          "legendFormat": "misses"
         }
       ]
     }

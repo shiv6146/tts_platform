@@ -47,6 +47,7 @@ services:
       VALKEY_URL: redis://valkey:6379/0
       NATS_URL: nats://nats:4222
       INFERENCE_GRPC_ADDR: ${INFERENCE_GRPC_ADDR:-inference:50051}
+      METRICS_WALLET_PER_USER: ${METRICS_WALLET_PER_USER:-true}
     depends_on:
       postgres:
         condition: service_healthy

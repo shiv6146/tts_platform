@@ -34,11 +34,23 @@ type control struct {
 }
 
 type LiveHandler struct {
-	Inference   *grpcclient.Client
-	Wallets     *cache.WalletCache
-	Publisher   *billing.Publisher
-	Coalesce    time.Duration
-	RefreshBal  time.Duration
+	Inference            *grpcclient.Client
+	Wallets              *cache.WalletCache
+	Publisher            *billing.Publisher
+	Coalesce             time.Duration
+	RefreshBal           time.Duration
+	MetricsWalletPerUser bool
+}
+
+func (h *LiveHandler) observeWallet(ctx context.Context, userID uuid.UUID) {
+	if !h.MetricsWalletPerUser {
+		return
+	}
+	snap, err := h.Wallets.Get(ctx, userID)
+	if err != nil {
+		return
+	}
+	metrics.ObserveWalletBalance(true, userID, snap.BalanceUSD)
 }
 
 func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +64,7 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "insufficient balance", http.StatusPaymentRequired)
 		return
 	}
+	h.observeWallet(r.Context(), u.ID)
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -142,6 +155,7 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			snap, _ = h.Wallets.Refresh(r.Context(), u.ID)
 			budget = snap.BalanceUSD
 			lastRefresh = time.Now()
+			h.observeWallet(r.Context(), u.ID)
 		}
 	}
 
@@ -150,5 +164,7 @@ func (h *LiveHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if audioSeconds > 0 {
 		metrics.RTF.WithLabelValues("websocket").Observe(proc / audioSeconds)
 	}
+	metrics.RequestDuration.WithLabelValues("/v1/tts/live", "websocket").Observe(proc)
+	h.observeWallet(r.Context(), u.ID)
 	_ = conn.WriteJSON(control{Type: "done", DeliveredAudioSeconds: audioSeconds})
 }
