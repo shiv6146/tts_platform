@@ -58,6 +58,7 @@ def analyze_chunks(chunks: list[dict]) -> dict:
 
 
 def capture_http_stream(api_url: str, api_key: str, text: str, voice: str) -> tuple[bytes, list[dict]]:
+    """Note: HTTP body reads are TCP-sized, not SNAC frame boundaries. Use --grpc for per-chunk timing."""
     import urllib.request
 
     body = json.dumps({"text": text, "voice": voice}).encode()
@@ -77,7 +78,7 @@ def capture_http_stream(api_url: str, api_key: str, text: str, voice: str) -> tu
         if resp.status != 200:
             raise RuntimeError(f"HTTP {resp.status}: {resp.read(500)}")
         while True:
-            data = resp.read(8192)
+            data = resp.read(4096)
             if not data:
                 break
             t_recv = time.perf_counter() - t0
