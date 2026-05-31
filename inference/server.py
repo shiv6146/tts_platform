@@ -51,10 +51,19 @@ class Servicer:
     def Health(self, request, context):
         del request
         ok = ready()
+        backend = os.environ.get("INFERENCE_BACKEND", "auto")
+        if ok:
+            try:
+                from backends.select import _backend_kind
+
+                if _backend_kind is not None:
+                    backend = _backend_kind.value
+            except Exception:
+                pass
         if not ok:
             context.set_code(grpc.StatusCode.UNAVAILABLE)
             context.set_details("inference backend or SNAC not ready")
-        return self.pb2.HealthResponse(ok=ok)
+        return self.pb2.HealthResponse(ok=ok, backend=backend)
 
     def Synthesize(self, request, context):
         if not ready():

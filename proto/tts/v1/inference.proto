@@ -14,6 +14,8 @@ message HealthRequest {}
 
 message HealthResponse {
   bool ok = 1;
+  // Active token backend inside this gRPC server (vllm | llamacpp), not the llama.cpp HTTP sidecar name.
+  string backend = 2;
 }
 
 message SynthesizeRequest {

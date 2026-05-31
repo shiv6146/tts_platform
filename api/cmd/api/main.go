@@ -62,9 +62,15 @@ func main() {
 
 	inf, err := grpcclient.Dial(ctx, cfg.InferenceGRPCAddr)
 	if err != nil {
-		log.Fatalf("inference grpc: %v", err)
+		log.Fatalf("inference grpc dial %s: %v", cfg.InferenceGRPCAddr, err)
 	}
 	defer inf.Close()
+	if ok, backend, err := inf.HealthDetail(ctx); err != nil {
+		log.Fatalf("inference grpc health %s: %v", cfg.InferenceGRPCAddr, err)
+	} else {
+		log.Printf("inference grpc %s ok backend=%s", cfg.InferenceGRPCAddr, backend)
+		_ = ok
+	}
 
 	_, devKey, err := auth.EnsureDefaultUser(ctx, pool, cfg.DefaultUsername, cfg.DefaultPassword,
 		cfg.DefaultWalletUSD, cfg.PlatformDefaultPricePerMinute)
@@ -101,6 +107,7 @@ func main() {
 	router.Mount("/docs", http.StripPrefix("/docs", docs.Handler()))
 	router.Get("/health", srv.GetHealth)
 	router.Get("/livez", srv.GetHealth)
+	router.Get("/v1/meta/inference", srv.GetMetaInference)
 	router.Post("/v1/auth/register", srv.RegisterUser)
 	router.Post("/v1/auth/login", srv.LoginUser)
 	router.Post("/v1/auth/logout", srv.LogoutUser)

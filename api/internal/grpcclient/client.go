@@ -34,14 +34,20 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) Health(ctx context.Context) error {
+	_, _, err := c.HealthDetail(ctx)
+	return err
+}
+
+// HealthDetail returns readiness and the active token backend (vllm | llamacpp).
+func (c *Client) HealthDetail(ctx context.Context) (ok bool, backend string, err error) {
 	resp, err := c.client.Health(ctx, &ttsv1.HealthRequest{})
 	if err != nil {
-		return err
+		return false, "", err
 	}
 	if !resp.Ok {
-		return fmt.Errorf("inference unhealthy")
+		return false, resp.Backend, fmt.Errorf("inference unhealthy (backend=%s)", resp.Backend)
 	}
-	return nil
+	return true, resp.Backend, nil
 }
 
 func (c *Client) Synthesize(ctx context.Context, requestID, text, voice string) (grpc.ServerStreamingClient[ttsv1.AudioChunk], error) {

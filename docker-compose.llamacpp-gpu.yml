@@ -10,6 +10,8 @@ services:
       INFERENCE_BACKEND: llamacpp
       INFERENCE_MOCK: "false"
       REQUIRE_REAL_INFERENCE: "true"
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
       LLAMACPP_URL: http://llama-cpp-server:5006/v1/completions
       SNAC_DEVICE: cuda
       ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
@@ -20,7 +22,7 @@ services:
     volumes: []
     depends_on:
       llama-cpp-server:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         reservations:

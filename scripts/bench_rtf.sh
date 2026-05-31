@@ -39,10 +39,15 @@ if [[ "$WITH_GRPC" == "1" ]]; then
   ARGS+=(--grpc --grpc-addr 127.0.0.1:50051)
 fi
 
-echo "==> warm-up"
-docker compose exec -T inference python /app/scripts/bench_all_modes.py \
-  "${ARGS[@]}" --out-dir "/tmp/bench_${TAG}_warmup" 2>/dev/null | tail -8 || true
-sleep 2
+if [[ "${BENCH_SKIP_WARMUP:-0}" != "1" ]]; then
+  echo "==> warm-up (gRPC stream only)"
+  docker compose exec -T inference python -c "
+import sys; sys.path.insert(0,'/app/scripts')
+from debug_pcm_stream import capture_grpc_synthesize
+capture_grpc_synthesize('127.0.0.1:50051', '''${TEXT}''', 'tara')
+" 2>/dev/null || true
+  sleep 2
+fi
 
 echo "==> measured run (async, stream, live${WITH_GRPC:+, gRPC})"
 docker compose exec -T inference python /app/scripts/bench_all_modes.py "${ARGS[@]}"

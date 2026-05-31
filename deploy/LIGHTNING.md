@@ -22,8 +22,11 @@ cp .env.example .env
 # vLLM + HF FT (default)
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
 
-# GGUF + llama.cpp CUDA (RTF experiment; lex-au checkpoints)
-docker compose -f docker-compose.yml -f docker-compose.llamacpp-gpu.yml up --build -d
+# GGUF + llama.cpp CUDA (production on L40S; lex-au checkpoints)
+./scripts/use-backend.sh llamacpp
+
+# vLLM + HF FT
+./scripts/use-backend.sh vllm
 
 docker compose logs -f inference
 ```
@@ -89,6 +92,8 @@ docker compose ps grafana prometheus metering
 | API metrics | `http://<host>:8080/metrics` |
 
 Provisioned dashboard: **TTS Platform** (wallet, usage, inference latency). Prometheus scrapes `api:8080` and `metering:8081` on the compose network.
+
+Only one GPU token backend at a time. The API always uses gRPC **`inference:50051`** (SNAC + backend). `llama-cpp-server` is an HTTP sidecar for GGUF tokens only — not a second gRPC target. Check routing: `curl -s http://localhost:8080/v1/meta/inference`.
 
 `llama-cpp-server` may show **unhealthy** on old images: built-in healthcheck hits port **8080** while the server listens on **5006**. Current `docker-compose.llamacpp-gpu.yml` overrides this with `curl http://127.0.0.1:5006/health`.
 

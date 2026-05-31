@@ -1,4 +1,5 @@
 # Lightning / NVIDIA GPU: vLLM in-process (no llama.cpp sidecar).
+# Do not combine with docker-compose.llamacpp-gpu.yml. Use scripts/use-backend.sh to switch.
 services:
   inference:
     build:

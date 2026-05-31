@@ -35,9 +35,11 @@ Runs llama.cpp + GGUF; inference gRPC uses `INFERENCE_BACKEND=llamacpp`.
 
 ## Codegen
 
+gRPC contract: `proto/tts/v1/inference.proto` — regenerate stubs (never edit `*.pb.go` by hand):
+
 ```bash
+make gen-contracts   # Go + Python (uses Docker if protoc is missing)
 make gen-api
-make gen-proto-py
 ```
 
 ## Submodule
