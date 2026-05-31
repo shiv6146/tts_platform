@@ -101,6 +101,7 @@ func main() {
 	router.Get("/health", srv.GetHealth)
 	router.Get("/livez", srv.GetHealth)
 	router.Post("/v1/auth/register", srv.RegisterUser)
+	router.Post("/v1/auth/login", srv.LoginUser)
 
 	router.Group(func(pr chi.Router) {
 		pr.Use(auth.BearerMiddleware(pool))

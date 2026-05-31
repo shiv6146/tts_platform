@@ -48,6 +48,13 @@ func (s *Server) GetHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, gen.HealthResponse{Status: "ok"})
 }
 
+func (s *Server) writeAuthSession(w http.ResponseWriter, code int, u auth.User, apiKey string) {
+	id := openapi_types.UUID(u.ID)
+	writeJSON(w, code, gen.AuthSessionResponse{
+		Id: id, Username: u.Username, ApiKey: apiKey,
+	})
+}
+
 func (s *Server) RegisterUser(w http.ResponseWriter, r *http.Request) {
 	var req gen.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -59,8 +66,31 @@ func (s *Server) RegisterUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "conflict", http.StatusConflict)
 		return
 	}
-	id := openapi_types.UUID(u.ID)
-	writeJSON(w, http.StatusCreated, gen.UserResponse{Id: &id, Username: &u.Username})
+	_, _, secret, err := auth.CreateAPIKey(r.Context(), s.Pool, u.ID)
+	if err != nil {
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	s.writeAuthSession(w, http.StatusCreated, u, secret)
+}
+
+func (s *Server) LoginUser(w http.ResponseWriter, r *http.Request) {
+	var req gen.LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	u, err := auth.AuthenticatePassword(r.Context(), s.Pool, req.Username, req.Password)
+	if err != nil {
+		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
+		return
+	}
+	_, _, secret, err := auth.CreateAPIKey(r.Context(), s.Pool, u.ID)
+	if err != nil {
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
+	s.writeAuthSession(w, http.StatusOK, u, secret)
 }
 
 func (s *Server) CreateApiKey(w http.ResponseWriter, r *http.Request) {

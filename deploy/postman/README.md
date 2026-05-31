@@ -5,7 +5,8 @@
 1. Postman → **Import** → `deploy/postman/tts_platform.postman_collection.json`
 2. Collection variables:
    - `baseUrl` — e.g. `https://your-lightning-host:8080`
-   - `apiKey` — `sk-...` from first API boot log or **Create API key**
+   - `username` / `password` — credentials for **Register** or **Login**
+   - `apiKey` — set automatically when you run **Register**, **Login**, or **Create API key**
 
 OpenAPI source: `api/openapi.yaml` · Swagger UI: `{baseUrl}/docs`
 

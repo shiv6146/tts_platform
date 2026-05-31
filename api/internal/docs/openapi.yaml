@@ -35,13 +35,34 @@ paths:
               $ref: "#/components/schemas/RegisterRequest"
       responses:
         "201":
-          description: Created
+          description: Created with initial API key (shown once)
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UserResponse"
+                $ref: "#/components/schemas/AuthSessionResponse"
         "409":
           description: Username taken
+  /v1/auth/login:
+    post:
+      operationId: loginUser
+      security: []
+      summary: Login with username and password
+      description: Verifies credentials and returns a new API key (`apiKey`) for Bearer auth.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionResponse"
+        "401":
+          description: Invalid credentials
   /v1/auth/api-keys:
     post:
       operationId: createApiKey
@@ -237,6 +258,27 @@ components:
           format: uuid
         username:
           type: string
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    AuthSessionResponse:
+      type: object
+      required: [id, username, apiKey]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        apiKey:
+          type: string
+          description: Bearer token sk-... shown once; use as Authorization Bearer value
     CreateApiKeyResponse:
       type: object
       properties:

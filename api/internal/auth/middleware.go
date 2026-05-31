@@ -24,8 +24,9 @@ func UserFromContext(ctx context.Context) (User, bool) {
 
 // Paths served by the OpenAPI mux behind BearerMiddleware but declared public in openapi.yaml.
 var publicPaths = map[string]struct{}{
-	"/health":            {},
-	"/v1/auth/register":  {},
+	"/health":           {},
+	"/v1/auth/register": {},
+	"/v1/auth/login":    {},
 }
 
 func BearerMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
