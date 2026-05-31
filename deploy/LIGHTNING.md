@@ -85,7 +85,7 @@ docker compose ps grafana prometheus metering
 | URL | Default login |
 |-----|----------------|
 | Grafana `http://<host>:3000` | `admin` / `admin` |
-| Prometheus `http://<host>:9090` | none |
+| Prometheus `http://<host>:9091` | none (9090 often taken on Lightning; override `PROMETHEUS_HOST_PORT`) |
 | API metrics | `http://<host>:8080/metrics` |
 
 Provisioned dashboard: **TTS Platform** (wallet, usage, inference latency). Prometheus scrapes `api:8080` and `metering:8081` on the compose network.
