@@ -18,6 +18,8 @@ services:
       ORPHEUS_TOKENIZER: canopylabs/orpheus-3b-0.1-pretrained
       HF_TOKEN: ${HF_TOKEN}
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
+    ports:
+      - "50051:50051"
     deploy:
       resources:
         reservations:

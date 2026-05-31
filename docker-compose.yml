@@ -108,8 +108,7 @@ services:
     volumes:
       - hf_cache:/root/.cache/huggingface
       - ./vendor/Orpheus-TTS:/app/vendor/Orpheus-TTS:ro
-    ports:
-      - "50051:50051"
+    # Host port only in docker-compose.gpu.yml (llamacpp scales replicas on the internal network).
     healthcheck:
       test:
         [
