@@ -33,6 +33,25 @@ def write_wav(path: Path, pcm: bytes, sample_rate: int = SAMPLE_RATE) -> None:
         wf.writeframes(pcm)
 
 
+def boundary_rms_jump(pcm: bytes, chunk_size: int = 4096) -> float | None:
+    """RMS level jump at fixed chunk boundaries (high => overlap/stutter risk)."""
+    if len(pcm) < chunk_size * 2:
+        return None
+    import struct
+
+    def rms_at(off: int) -> float:
+        n = min(256, (len(pcm) - off) // 2)
+        if n <= 0:
+            return 0.0
+        samples = struct.unpack(f"<{n}h", pcm[off : off + n * 2])
+        return (sum(s * s for s in samples) / n) ** 0.5
+
+    jumps = []
+    for i in range(chunk_size, len(pcm) - 256, chunk_size):
+        jumps.append(abs(rms_at(i) - rms_at(i - 2)))
+    return max(jumps) if jumps else None
+
+
 def analyze_chunks(chunks: list[dict]) -> dict:
     if not chunks:
         return {"error": "no chunks"}
@@ -150,6 +169,9 @@ def main() -> int:
         write_wav(out / f"{tag}.wav", pcm)
         (out / f"{tag}.raw").write_bytes(pcm)
         stats = analyze_chunks(chunks)
+        jump = boundary_rms_jump(pcm, 4096)
+        if jump is not None:
+            stats["boundary_rms_jump_max_4096"] = round(jump, 1)
         manifest["tests"][tag] = {"stats": stats, "chunks": chunks[:200]}
         print(json.dumps(stats, indent=2))
 
@@ -160,6 +182,9 @@ def main() -> int:
         write_wav(out / f"{tag}.wav", pcm)
         (out / f"{tag}.raw").write_bytes(pcm)
         stats = analyze_chunks(chunks)
+        jump = boundary_rms_jump(pcm, 4096)
+        if jump is not None:
+            stats["boundary_rms_jump_max_4096"] = round(jump, 1)
         manifest["tests"][tag] = {"stats": stats, "chunks": chunks[:200]}
         print(json.dumps(stats, indent=2))
 

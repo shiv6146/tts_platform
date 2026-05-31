@@ -1,13 +1,10 @@
 /**
- * Gapless PCM playback via AudioWorklet ring buffer.
- * Waits for a minimum buffer before playback so slow chunk delivery does not
- * cause underrun silence (SNAC yields ~85ms audio every ~200–300ms while generating).
+ * PCM playback for TTS: gapless streaming via AudioWorklet, or one-shot full-buffer play.
  */
 
 const SAMPLE_RATE = 24000;
 const RING_SECONDS = 45;
-/** Audio to buffer before starting speakers (covers generation cadence). */
-const DEFAULT_START_BUFFER_SEC = 0.45;
+const DEFAULT_START_BUFFER_SEC = 0.25;
 
 const WORKLET_SRC = `
 class PCMRingPlayer extends AudioWorkletProcessor {
@@ -78,6 +75,20 @@ function workletModule(): string {
   return workletModuleURL;
 }
 
+function pcmToFloat32(pcm: Uint8Array): Float32Array {
+  const samples = pcm.length >> 1;
+  const out = new Float32Array(samples);
+  const view = new DataView(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+  for (let i = 0; i < samples; i++) {
+    out[i] = view.getInt16(i << 1, true) / 32768;
+  }
+  return out;
+}
+
+export function pcmAudioSeconds(pcm: Uint8Array, sampleRate = SAMPLE_RATE): number {
+  return pcm.length / 2 / sampleRate;
+}
+
 export class PCMStreamPlayer {
   private ctx: AudioContext | null = null;
   private node: AudioWorkletNode | null = null;
@@ -85,27 +96,29 @@ export class PCMStreamPlayer {
   private samplesQueued = 0;
   private playbackStarted = false;
   private readonly startBufferSamples: number;
+  private oneShotSource: AudioBufferSourceNode | null = null;
 
   constructor(startBufferSec = DEFAULT_START_BUFFER_SEC) {
     this.startBufferSamples = Math.floor(SAMPLE_RATE * startBufferSec);
   }
 
-  private ensureReady(): Promise<void> {
-    if (this.initPromise) return this.initPromise;
-    this.initPromise = (async () => {
-      const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
-      if (ctx.state === "suspended") {
-        await ctx.resume();
-      }
-      await ctx.audioWorklet.addModule(workletModule());
-      const node = new AudioWorkletNode(ctx, "pcm-ring-player", {
-        outputChannelCount: [1],
-      });
-      node.connect(ctx.destination);
-      this.ctx = ctx;
-      this.node = node;
-    })();
-    return this.initPromise;
+  private async ensureReady(): Promise<AudioContext> {
+    if (this.initPromise) await this.initPromise;
+    if (!this.ctx) {
+      this.initPromise = (async () => {
+        const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+        if (ctx.state === "suspended") await ctx.resume();
+        await ctx.audioWorklet.addModule(workletModule());
+        const node = new AudioWorkletNode(ctx, "pcm-ring-player", {
+          outputChannelCount: [1],
+        });
+        node.connect(ctx.destination);
+        this.ctx = ctx;
+        this.node = node;
+      })();
+      await this.initPromise;
+    }
+    return this.ctx!;
   }
 
   private maybeStartPlayback() {
@@ -115,17 +128,17 @@ export class PCMStreamPlayer {
     this.playbackStarted = true;
   }
 
+  /** Stream mode: enqueue chunks; plays after a short prebuffer. */
   enqueue(pcm: Uint8Array, _sampleRate = SAMPLE_RATE) {
     if (pcm.length < 2) return;
     void this.ensureReady().then(() => {
       const copy = new Uint8Array(pcm);
       this.samplesQueued += copy.length >> 1;
-      this.node?.port.postMessage({ buf: copy.buffer }, [copy.buffer]);
+      this.node?.port.postMessage(copy.buffer, [copy.buffer]);
       this.maybeStartPlayback();
     });
   }
 
-  /** Start playback with whatever is buffered (end of stream / short phrase). */
   flush() {
     if (!this.playbackStarted && this.node && this.samplesQueued > 0) {
       this.node.port.postMessage({ type: "start" });
@@ -133,7 +146,31 @@ export class PCMStreamPlayer {
     }
   }
 
+  /** Play full PCM in one buffer (no chunk-boundary artifacts). */
+  async playAll(pcm: Uint8Array, sampleRate = SAMPLE_RATE): Promise<void> {
+    if (pcm.length < 2) return;
+    await this.stop();
+    const ctx = await this.ensureReady();
+    const floats = pcmToFloat32(pcm);
+    const buffer = ctx.createBuffer(1, floats.length, sampleRate);
+    buffer.copyToChannel(floats, 0);
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(ctx.destination);
+    this.oneShotSource = source;
+    return new Promise((resolve, reject) => {
+      source.onended = () => {
+        this.oneShotSource = null;
+        resolve();
+      };
+      source.onerror = () => reject(new Error("playback error"));
+      source.start();
+    });
+  }
+
   async stop() {
+    this.oneShotSource?.stop();
+    this.oneShotSource = null;
     if (this.node) {
       this.node.port.postMessage({ type: "stop" });
       this.node.disconnect();

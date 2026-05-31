@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { getApiKey } from "../lib/auth";
-import { PCMStreamPlayer } from "../audio/pcmPlayer";
+import { PCMStreamPlayer, pcmAudioSeconds } from "../audio/pcmPlayer";
 import { EmotiveChips } from "../components/EmotiveChips";
 import type { VoicesMeta } from "../api/client";
 
@@ -11,6 +11,17 @@ type Props = {
   onTextChange: (t: string) => void;
   onDone: () => void;
 };
+
+function concatChunks(chunks: Uint8Array[]): Uint8Array {
+  const n = chunks.reduce((s, c) => s + c.length, 0);
+  const out = new Uint8Array(n);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return out;
+}
 
 export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) {
   const [status, setStatus] = useState("");
@@ -46,7 +57,8 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
     const ac = new AbortController();
     abortRef.current = ac;
     setLoading(true);
-    setStatus("Streaming…");
+    setStatus("Receiving audio…");
+    const chunks: Uint8Array[] = [];
     try {
       const res = await fetch("/v1/tts/stream", {
         method: "POST",
@@ -72,10 +84,13 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (value?.length) player.enqueue(value);
+        if (value?.length) chunks.push(new Uint8Array(value));
       }
-      player.flush();
-      setStatus("Stream complete");
+      const pcm = concatChunks(chunks);
+      const sec = pcmAudioSeconds(pcm);
+      setStatus(`Playing ${sec.toFixed(2)}s audio…`);
+      await player.playAll(pcm);
+      setStatus(`Done (${sec.toFixed(2)}s)`);
       onDone();
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
@@ -89,7 +104,9 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
   return (
     <div className="card">
       <h2>Stream</h2>
-      <p className="muted">Full text in — chunked PCM played as it arrives (24 kHz).</p>
+      <p className="muted">
+        Full text in — PCM is buffered, then played as one clip (24 kHz) to avoid chunk gaps.
+      </p>
       {!voice && <p className="status err">Select a voice in Voice Lab first.</p>}
       <div style={{ marginTop: "0.75rem" }}>
         <label htmlFor="stream-text">Text</label>
@@ -104,7 +121,7 @@ export function StreamPanel({ meta, voice, text, onTextChange, onDone }: Props) 
       <EmotiveChips tags={meta?.emotiveTags ?? []} onInsert={insertTag} />
       <div className="row">
         <button type="button" onClick={stream} disabled={loading || !voice}>
-          {loading ? "Playing…" : "Stream speak"}
+          {loading ? "Working…" : "Stream speak"}
         </button>
         <button type="button" className="secondary" onClick={stop}>
           Stop

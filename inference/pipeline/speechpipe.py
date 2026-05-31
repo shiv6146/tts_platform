@@ -119,50 +119,28 @@ def turn_token_into_id(token_string, index):
 
 
 async def tokens_decoder(token_gen):
+    """Match upstream Orpheus decoder cadence (28-frame windows, every 7 tokens after warmup).
+
+    Aggressive overlapping yields (49-frame windows every 7 tokens) produced duplicate
+    PCM when chunks were concatenated — audible stutter in stream/live playback.
+    """
     buffer = []
     count = 0
-    first_chunk_processed = False
-    min_frames_first = 7
-    min_frames_subsequent = 28
-    ideal_frames = 49
-    process_every_n = 7
 
     async for token_sim in token_gen:
         token = turn_token_into_id(token_sim, count)
         if token is not None and token > 0:
             buffer.append(token)
             count += 1
-            if not first_chunk_processed:
-                if count >= min_frames_first:
-                    buffer_to_proc = buffer[-min_frames_first:]
-                    audio_samples = convert_to_audio(buffer_to_proc, count)
-                    if audio_samples is not None:
-                        first_chunk_processed = True
-                        yield audio_samples
-            else:
-                if count % process_every_n == 0:
-                    if len(buffer) >= ideal_frames:
-                        buffer_to_proc = buffer[-ideal_frames:]
-                    elif len(buffer) >= min_frames_subsequent:
-                        buffer_to_proc = buffer[-min_frames_subsequent:]
-                    else:
-                        continue
-                    audio_samples = convert_to_audio(buffer_to_proc, count)
-                    if audio_samples is not None:
-                        yield audio_samples
+            if count % 7 == 0 and count > 27:
+                buffer_to_proc = buffer[-28:]
+                audio_samples = convert_to_audio(buffer_to_proc, count)
+                if audio_samples is not None:
+                    yield audio_samples
 
-    if len(buffer) >= ideal_frames:
-        audio_samples = convert_to_audio(buffer[-ideal_frames:], count)
-        if audio_samples is not None:
-            yield audio_samples
-    elif len(buffer) >= min_frames_subsequent:
-        audio_samples = convert_to_audio(buffer[-min_frames_subsequent:], count)
-        if audio_samples is not None:
-            yield audio_samples
-    elif len(buffer) >= process_every_n:
-        last_token = buffer[-1]
-        padding = [last_token] * (min_frames_subsequent - len(buffer))
-        audio_samples = convert_to_audio(buffer + padding, count)
+    if count > 27 and count % 7 != 0:
+        buffer_to_proc = buffer[-28:]
+        audio_samples = convert_to_audio(buffer_to_proc, count)
         if audio_samples is not None:
             yield audio_samples
 

@@ -34,3 +34,9 @@ build-api: build-web gen-api
 tidy:
 	cd api && go mod tidy
 	cd metering && go mod tidy
+
+validate-metering:
+	python3 scripts/validate_metering.py
+
+debug-pcm:
+	python3 scripts/debug_pcm_stream.py --grpc

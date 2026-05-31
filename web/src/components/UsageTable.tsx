@@ -25,22 +25,29 @@ type Props = {
   loading?: boolean;
 };
 
+function eventRequestId(e: UsageItem): string | undefined {
+  const raw = e.requestId ?? (e as { request_id?: string }).request_id;
+  if (typeof raw !== "string") return undefined;
+  const t = raw.trim();
+  return t.length > 0 ? t : undefined;
+}
+
 function aggregateByRequest(items: UsageItem[]): AggregatedRow[] {
   const map = new Map<string, AggregatedRow>();
 
   for (const e of items) {
-    const requestId = e.requestId ?? e.id ?? "unknown";
+    const requestId = eventRequestId(e);
     const transport = e.transport ?? "—";
-    const key = `${requestId}:${transport}`;
+    const key = requestId ? `${requestId}:${transport}` : `event:${e.id ?? Math.random()}`;
     const at = e.occurredAt ?? "";
-    const audio = e.audioSeconds ?? 0;
-    const cost = e.costUsd ?? 0;
+    const audio = Number(e.audioSeconds) || 0;
+    const cost = Number(e.costUsd) || 0;
 
     const existing = map.get(key);
     if (!existing) {
       map.set(key, {
         key,
-        requestId,
+        requestId: requestId ?? (e.id ?? "—"),
         transport,
         audioSeconds: audio,
         costUsd: cost,
@@ -63,12 +70,13 @@ function aggregateByRequest(items: UsageItem[]): AggregatedRow[] {
 }
 
 function shortId(id: string): string {
-  if (id.length <= 12) return id;
-  return `${id.slice(0, 8)}…`;
+  if (id.length <= 14) return id;
+  return `${id.slice(0, 8)}…${id.slice(-4)}`;
 }
 
 export function UsageTable({ items, total, loading }: Props) {
   const rows = useMemo(() => aggregateByRequest(items), [items]);
+  const rawChunks = items.length;
 
   if (loading) {
     return <p className="muted">Loading usage…</p>;
@@ -80,12 +88,8 @@ export function UsageTable({ items, total, loading }: Props) {
   return (
     <>
       <p className="muted">
-        {rows.length} request(s)
-        {total != null && total > rows.length
-          ? ` · ${total} billing chunk(s) rolled up`
-          : rows.some((r) => r.chunks > 1)
-            ? " · grouped by request"
-            : ""}
+        {rows.length} request(s) · {rawChunks} billing event(s)
+        {total != null && total > rawChunks ? ` · ${total} total in DB` : ""}
       </p>
       <div style={{ overflowX: "auto" }}>
         <table className="usage-table">
@@ -110,7 +114,7 @@ export function UsageTable({ items, total, loading }: Props) {
                 <td className="mono">
                   {shortId(r.requestId)}
                   {r.chunks > 1 ? (
-                    <span className="muted"> ({r.chunks})</span>
+                    <span className="muted"> ×{r.chunks}</span>
                   ) : null}
                 </td>
                 <td>{r.audioSeconds.toFixed(2)}</td>

@@ -186,6 +186,12 @@ func (s *Server) ListUsage(w http.ResponseWriter, r *http.Request, params gen.Li
 	if params.Offset != nil {
 		offset = *params.Offset
 	}
+	var total int
+	if err := s.Pool.QueryRow(r.Context(), `
+		SELECT COUNT(*) FROM usage_events WHERE user_id = $1`, u.ID).Scan(&total); err != nil {
+		http.Error(w, "error", http.StatusInternalServerError)
+		return
+	}
 	rows, err := s.Pool.Query(r.Context(), `
 		SELECT id, request_id, transport, audio_seconds, cost_usd, occurred_at
 		FROM usage_events WHERE user_id = $1
@@ -214,7 +220,6 @@ func (s *Server) ListUsage(w http.ResponseWriter, r *http.Request, params gen.Li
 			AudioSeconds: &a, CostUsd: &c, OccurredAt: &occ,
 		})
 	}
-	total := len(items)
 	writeJSON(w, http.StatusOK, gen.UsageListResponse{Items: &items, Total: &total})
 }
 
