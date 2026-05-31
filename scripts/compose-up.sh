@@ -68,17 +68,34 @@ if [[ "$BACKEND" == "vllm" ]]; then
   docker compose rm -f llama-cpp-server model-init 2>/dev/null || true
 fi
 
+LLAMACPP_REPLICAS="${LLAMACPP_REPLICAS:-1}"
 UP_ARGS=(up -d)
 [[ "$BUILD" == "1" ]] && UP_ARGS=(up -d --build)
+if [[ "$BACKEND" == "llamacpp" && "$LLAMACPP_REPLICAS" =~ ^[0-9]+$ && "$LLAMACPP_REPLICAS" -gt 0 ]]; then
+  echo "llama-cpp-server replicas: $LLAMACPP_REPLICAS (via llama-lb nginx)"
+  UP_ARGS+=(--scale "llama-cpp-server=${LLAMACPP_REPLICAS}")
+fi
 docker compose "${UP_ARGS[@]}"
 
 if [[ "$BACKEND" == "llamacpp" ]]; then
-  echo "Waiting for llama-cpp-server (model load)..."
+  echo "Waiting for llama-cpp-server replicas (model load)..."
   for i in $(seq 1 40); do
-    st=$(docker inspect -f '{{.State.Health.Status}}' tts_platform-llama-cpp-server-1 2>/dev/null || echo starting)
-    echo "  llama-cpp-server health=$st"
-    [[ "$st" == "healthy" ]] && break
+    healthy=0
+    for cid in $(docker compose ps -q llama-cpp-server 2>/dev/null); do
+      st=$(docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo starting)
+      echo "  $(docker inspect -f '{{.Name}}' "$cid" | sed 's#^/##') health=$st"
+      [[ "$st" == "healthy" ]] && healthy=$((healthy + 1))
+    done
+    want="${LLAMACPP_REPLICAS:-1}"
+    [[ "$healthy" -ge "$want" ]] && break
     sleep 15
+  done
+  echo "Waiting for llama-lb..."
+  for i in $(seq 1 20); do
+    st=$(docker inspect -f '{{.State.Health.Status}}' tts_platform-llama-lb-1 2>/dev/null || echo starting)
+    echo "  llama-lb health=$st"
+    [[ "$st" == "healthy" ]] && break
+    sleep 5
   done
 fi
 

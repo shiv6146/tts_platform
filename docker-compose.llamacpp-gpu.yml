@@ -1,6 +1,11 @@
 # Lightning / NVIDIA GPU: lex-au GGUF via llama.cpp (CUDA) + SNAC inference gRPC.
+#
 # Usage:
 #   COMPOSE_FILE=docker-compose.yml:docker-compose.llamacpp-gpu.yml docker compose up --build -d
+#   LLAMACPP_REPLICAS=2 ./scripts/compose-up.sh llamacpp   # multi llama + nginx LB
+#
+# Scale: each replica loads Q8 GGUF on the same GPU (~5GB weights + KV per slot).
+# Use LLAMACPP_REPLICAS>1 with lower LLAMACPP_PARALLEL per replica (e.g. 2×8 not 2×16).
 services:
   inference:
     build:
@@ -12,7 +17,7 @@ services:
       REQUIRE_REAL_INFERENCE: "true"
       HF_TOKEN: ${HF_TOKEN:-}
       HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
-      LLAMACPP_URL: http://llama-cpp-server:5006/v1/completions
+      LLAMACPP_URL: http://llama-lb:5006/v1/completions
       SNAC_DEVICE: cuda
       ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
       ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q8_0.gguf}
@@ -22,7 +27,7 @@ services:
       GRPC_MAX_WORKERS: ${GRPC_MAX_WORKERS:-48}
     volumes: []
     depends_on:
-      llama-cpp-server:
+      llama-lb:
         condition: service_healthy
     deploy:
       resources:
@@ -33,6 +38,20 @@ services:
               capabilities: [gpu]
     healthcheck:
       start_period: 600s
+
+  llama-lb:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./deploy/nginx/llama-lb.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      llama-cpp-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:5006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   llama-cpp-server:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda

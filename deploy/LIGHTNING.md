@@ -80,6 +80,21 @@ export API_URL=https://<your-studio-host>:8080
 ./scripts/bench_remote.sh all 12 1,4,8
 ```
 
+### Multiple llama.cpp replicas (one L40S, keep Q8)
+
+Docker does not auto-balance HTTP by itself. This stack uses **nginx (`llama-lb`)** with `least_conn` over scaled `llama-cpp-server` containers (Docker DNS resolves all replicas).
+
+```bash
+# In .env — e.g. 2 replicas × 8 parallel slots ≈ 16 concurrent sequences, ~10GB weights
+LLAMACPP_REPLICAS=2
+LLAMACPP_PARALLEL=8
+MAX_CONCURRENT_SYNTHESIS=16
+
+./scripts/compose-up.sh llamacpp
+```
+
+Each replica loads the full GGUF on the **same GPU** (shared VRAM, shared SM). Useful when one process saturates; diminishing returns past ~2–3 replicas on a single L40S. Monitor `nvidia-smi` before `LLAMACPP_REPLICAS=3`.
+
 ### Concurrency (40 streams on L40S)
 
 Remote bench (`bench_remote_out/remote/manifest.json`) shows **queueing**, not broken streaming:

@@ -12,17 +12,12 @@ import requests
 
 from pipeline.prompt import format_prompt
 
+from . import llamacpp_lb
+
 log = logging.getLogger("inference.llamacpp")
 
 REPETITION_PENALTY = 1.1
 _server_ready = False
-
-
-def _api_url() -> str:
-    return os.environ.get(
-        "LLAMACPP_URL",
-        "http://llama-cpp-server:5006/v1/completions",
-    )
 
 
 def _timeout() -> int:
@@ -53,35 +48,34 @@ def start_wait() -> None:
 
 def wait_for_server(max_wait_sec: int = 600) -> None:
     global _server_ready
-    from urllib.parse import urlparse
+    import socket
 
-    parsed = urlparse(_api_url())
-    host = parsed.hostname or "llama-cpp-server"
-    port = parsed.port or 5006
-    base = f"{parsed.scheme}://{host}:{port}"
-    probe_urls = [f"{base}/health", f"{base}/v1/models", base]
+    bases = llamacpp_lb.probe_bases()
     deadline = time.time() + max_wait_sec
     while time.time() < deadline:
-        for url in probe_urls:
+        for base in bases:
+            probe_urls = [f"{base}/health", f"{base}/v1/models", base]
+            for url in probe_urls:
+                try:
+                    r = requests.get(url, timeout=5)
+                    if r.status_code < 500:
+                        log.info("llama.cpp ready (%s)", url)
+                        _server_ready = True
+                        return
+                except requests.RequestException:
+                    pass
+            parsed_host = base.split("://", 1)[-1]
+            host = parsed_host.rsplit(":", 1)[0]
+            port = int(parsed_host.rsplit(":", 1)[-1])
             try:
-                r = requests.get(url, timeout=5)
-                if r.status_code < 500:
-                    log.info("llama.cpp server ready (%s)", url)
+                with socket.create_connection((host, port), timeout=3):
+                    log.info("llama.cpp TCP ready %s:%s", host, port)
                     _server_ready = True
                     return
-            except requests.RequestException:
+            except OSError:
                 pass
-        try:
-            import socket
-
-            with socket.create_connection((host, port), timeout=3):
-                log.info("llama.cpp TCP ready %s:%s", host, port)
-                _server_ready = True
-                return
-        except OSError:
-            pass
         time.sleep(3)
-    raise TimeoutError(f"llama.cpp not ready at {host}:{port} after {max_wait_sec}s")
+    raise TimeoutError(f"llama.cpp not ready ({bases}) after {max_wait_sec}s")
 
 
 def server_ready() -> bool:
@@ -109,7 +103,7 @@ def make_token_generator(
         "model": _model_name(),
     }
     response = _http.post(
-        _api_url(),
+        llamacpp_lb.pick_completion_url(),
         headers={"Content-Type": "application/json"},
         json=payload,
         stream=True,
