@@ -22,11 +22,12 @@ cp .env.example .env
 # vLLM + HF FT (default)
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
 
-# GGUF + llama.cpp CUDA (production on L40S; lex-au checkpoints)
-./scripts/use-backend.sh llamacpp
+# Full stack (default: llamacpp + llama-cpp-server + api + grafana + prometheus)
+./scripts/compose-up.sh              # same as: compose-up.sh llamacpp
+./scripts/compose-up.sh vllm         # vLLM in-process, no llama-cpp-server
 
-# vLLM + HF FT
-./scripts/use-backend.sh vllm
+# Switch backend (alias for compose-up)
+./scripts/use-backend.sh llamacpp
 
 docker compose logs -f inference
 ```
@@ -70,9 +71,8 @@ Stream/live need **RTF &lt; 1**: `inter_chunk_gap_ms_avg` &lt; 85 (~85ms per SNA
 ### llama.cpp GGUF benchmark
 
 ```bash
-export COMPOSE_FILE=docker-compose.yml:docker-compose.llamacpp-gpu.yml
-chmod +x scripts/bench_rtf.sh
-./scripts/bench_rtf.sh llamacpp_q8
+./scripts/compose-up.sh llamacpp
+./scripts/bench_rtf.sh l40s_q8    # phase 1: gRPC, phase 2: API async/stream/live
 ```
 
 ## Monitoring (Grafana / Prometheus)

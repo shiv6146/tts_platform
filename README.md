@@ -10,10 +10,9 @@ Go API gateway + metering, Python gRPC inference (Orpheus 3B), Postgres, Valkey,
 See [deploy/LIGHTNING.md](deploy/LIGHTNING.md).
 
 ```bash
-# vLLM
-docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
-# GGUF + llama.cpp CUDA (RTF experiments)
-docker compose -f docker-compose.yml -f docker-compose.llamacpp-gpu.yml up --build -d
+./scripts/compose-up.sh              # default: llamacpp + llama-cpp-server
+./scripts/compose-up.sh vllm
+./scripts/bench_rtf.sh               # gRPC first, then API modes
 ./scripts/e2e_smoke.sh
 ```
 

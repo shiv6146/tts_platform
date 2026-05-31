@@ -208,6 +208,17 @@ def run_mode(
     return stats
 
 
+def check_api_reachable(api_url: str, timeout: int = 10) -> None:
+    url = f"{api_url.rstrip('/')}/health"
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status != 200:
+                raise RuntimeError(f"GET {url} -> HTTP {resp.status}")
+    except urllib.error.URLError as e:
+        raise RuntimeError(f"cannot reach API at {api_url}: {e}") from e
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description="Benchmark async / stream / live (+ optional gRPC)")
     p.add_argument("--api-url", default=os.environ.get("API_URL", "http://127.0.0.1:8080"))
@@ -215,7 +226,10 @@ def main() -> int:
     p.add_argument("--user", default=os.environ.get("DEFAULT_USERNAME", "dev"))
     p.add_argument("--password", default=os.environ.get("DEFAULT_PASSWORD", "devpassword"))
     p.add_argument("--grpc-addr", default=os.environ.get("GRPC_ADDR", "127.0.0.1:50051"))
-    p.add_argument("--grpc", action="store_true", help="Also bench direct gRPC Synthesize")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--grpc-only", action="store_true", help="Direct gRPC Synthesize only")
+    mode.add_argument("--api-only", action="store_true", help="HTTP async / stream / live only")
+    p.add_argument("--grpc", action="store_true", help="Include gRPC when running all API modes")
     p.add_argument("--text", default=os.environ.get(
         "BENCH_TEXT", "Hello, this is a streaming debug test for Orpheus TTS."
     ))
@@ -223,15 +237,34 @@ def main() -> int:
     p.add_argument("--out-dir", default="/tmp/bench_all_modes")
     args = p.parse_args()
 
-    api_key = args.api_key or login(args.api_url, args.user, args.password)
+    run_api = args.api_only or not args.grpc_only
+    run_grpc = args.grpc_only or args.grpc
+
     out = Path(args.out_dir)
     out.mkdir(parents=True, exist_ok=True)
     manifest: dict = {
-        "api_url": args.api_url,
+        "api_url": args.api_url if run_api else None,
+        "grpc_addr": args.grpc_addr if run_grpc else None,
         "text": args.text,
         "voice": args.voice,
         "tests": {},
     }
+
+    if run_grpc:
+        pcm, gchunks = capture_grpc_synthesize(args.grpc_addr, args.text, args.voice)
+        gstats = analyze_chunks(gchunks)
+        gstats["pcm_bytes"] = len(pcm)
+        print("\n==> stream_grpc (direct inference)")
+        print(json.dumps(gstats, indent=2))
+        manifest["tests"]["stream_grpc"] = gstats
+        (out / "stream_grpc.raw").write_bytes(pcm)
+
+    if not run_api:
+        _write_manifest(out, manifest)
+        return 0
+
+    check_api_reachable(args.api_url)
+    api_key = args.api_key or login(args.api_url, args.user, args.password)
 
     pcm, chunks = capture_http_stream(args.api_url, api_key, args.text, args.voice)
     stats = analyze_chunks(chunks)
@@ -256,18 +289,23 @@ def main() -> int:
     manifest["tests"]["live"] = lstats
     (out / "live.raw").write_bytes(pcm)
 
-    if args.grpc:
+    if run_grpc and not args.grpc_only:
         pcm, gchunks = capture_grpc_synthesize(args.grpc_addr, args.text, args.voice)
         gstats = analyze_chunks(gchunks)
         gstats["pcm_bytes"] = len(pcm)
         print("\n==> stream_grpc (direct inference)")
         print(json.dumps(gstats, indent=2))
         manifest["tests"]["stream_grpc"] = gstats
+        (out / "stream_grpc.raw").write_bytes(pcm)
 
+    _write_manifest(out, manifest)
+    return 0
+
+
+def _write_manifest(out: Path, manifest: dict) -> None:
     manifest_path = out / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2))
     print(f"\nWrote {manifest_path}")
-
     print("\n=== summary ===")
     for mode, st in manifest["tests"].items():
         rtf = st.get("rtf_from_avg_inter_chunk_gap") or st.get("rtf_end_to_end")
@@ -275,7 +313,6 @@ def main() -> int:
         gap = st.get("inter_chunk_gap_ms_avg")
         gap_s = f" gap_avg={gap}ms" if gap is not None else ""
         print(f"  {mode:14} rtf={rtf} realtime_ok={ok}{gap_s}")
-    return 0
 
 
 if __name__ == "__main__":
