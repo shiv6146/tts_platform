@@ -17,6 +17,8 @@ _load_started = False
 
 
 def _engine_kwargs() -> dict:
+    import torch
+
     device = os.environ.get("VLLM_DEVICE", "cuda").lower()
     kw: dict = {}
     if device == "cpu":
@@ -26,6 +28,11 @@ def _engine_kwargs() -> dict:
     gpu_util = os.environ.get("VLLM_GPU_MEMORY_UTILIZATION")
     if gpu_util:
         kw["gpu_memory_utilization"] = float(gpu_util)
+    if os.environ.get("VLLM_MAX_MODEL_LEN"):
+        kw["max_model_len"] = int(os.environ["VLLM_MAX_MODEL_LEN"])
+    elif device != "cpu" and torch.cuda.is_available():
+        # Model config defaults to 131k context; T4 cannot allocate that KV cache.
+        kw["max_model_len"] = 8192
     return kw
 
 

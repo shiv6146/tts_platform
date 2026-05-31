@@ -10,6 +10,7 @@ services:
       REQUIRE_REAL_INFERENCE: "true"
       VLLM_DEVICE: cuda
       VLLM_GPU_MEMORY_UTILIZATION: ${VLLM_GPU_MEMORY_UTILIZATION:-0.75}
+      VLLM_MAX_MODEL_LEN: ${VLLM_MAX_MODEL_LEN:-8192}
       SNAC_DEVICE: cuda
       ORPHEUS_MODEL_NAME: canopylabs/orpheus-3b-0.1-ft
       ORPHEUS_TOKENIZER: canopylabs/orpheus-3b-0.1-pretrained
