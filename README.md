@@ -2,19 +2,22 @@
 
 Go API gateway + metering, Python gRPC inference (Orpheus 3B), Postgres, Valkey, NATS.
 
-**Model (GPU cloud):** `canopylabs/orpheus-3b-0.1-ft` via vLLM  
-**Model (macOS):** `Orpheus-3b-FT-Q8_0.gguf` via llama.cpp
+**Model (GPU cloud, vLLM):** `canopylabs/orpheus-3b-0.1-ft`  
+**Model (GPU/macOS, GGUF):** `lex-au/Orpheus-3b-FT-Q8_0.gguf` via llama.cpp
 
 ## Lightning GPU (production)
 
 See [deploy/LIGHTNING.md](deploy/LIGHTNING.md).
 
 ```bash
+# vLLM
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
+# GGUF + llama.cpp CUDA (RTF experiments)
+docker compose -f docker-compose.yml -f docker-compose.llamacpp-gpu.yml up --build -d
 ./scripts/e2e_smoke.sh
 ```
 
-`INFERENCE_MOCK=false` always; stack uses optimized SNAC pipeline (7-token first chunk) from Orpheus-FastAPI.
+`INFERENCE_MOCK=false` always; shared canonical SNAC `speechpipe` over gRPC.
 
 ## Apple Silicon (local)
 

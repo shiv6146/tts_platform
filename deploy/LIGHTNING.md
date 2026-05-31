@@ -16,14 +16,27 @@ git clone https://github.com/shiv6146/tts_platform.git
 cd tts_platform
 git submodule update --init --recursive
 cp .env.example .env
-# Add HF_TOKEN=hf_... to .env (required for gated Orpheus model)
-# Ensure INFERENCE_MOCK=false and INFERENCE_BACKEND=vllm
+# Add HF_TOKEN=hf_... to .env if needed for gated downloads
+# Ensure INFERENCE_MOCK=false
 
+# vLLM + HF FT (default)
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
+
+# GGUF + llama.cpp CUDA (RTF experiment; lex-au checkpoints)
+docker compose -f docker-compose.yml -f docker-compose.llamacpp-gpu.yml up --build -d
+
 docker compose logs -f inference
 ```
 
-First boot downloads `canopylabs/orpheus-3b-0.1-ft` (10–20 minutes). Inference `Health` returns `ok=true` only after vLLM + SNAC are ready.
+vLLM first boot downloads `canopylabs/orpheus-3b-0.1-ft` (10–20 minutes).  
+llama.cpp first boot downloads `lex-au/Orpheus-3b-FT-Q8_0.gguf` into volume `gguf_models` (several GB).
+
+Optional faster quant:
+
+```bash
+ORPHEUS_GGUF_MODEL=Orpheus-3b-FT-Q4_K_M.gguf
+ORPHEUS_GGUF_HF_REPO=lex-au/Orpheus-3b-FT-Q4_K_M.gguf
+```
 
 ## Verify
 
@@ -50,6 +63,14 @@ docker compose exec inference python /app/scripts/debug_pcm_stream.py --grpc \
 ```
 
 Stream/live need **RTF &lt; 1**: `inter_chunk_gap_ms_avg` &lt; 85 (~85ms per SNAC chunk).
+
+### llama.cpp GGUF benchmark
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.llamacpp-gpu.yml
+chmod +x scripts/bench_rtf.sh
+./scripts/bench_rtf.sh llamacpp_q8
+```
 
 ## Troubleshooting
 

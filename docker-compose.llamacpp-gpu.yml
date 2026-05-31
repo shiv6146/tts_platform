@@ -1,0 +1,98 @@
+# Lightning / NVIDIA GPU: lex-au GGUF via llama.cpp (CUDA) + SNAC inference gRPC.
+# Usage:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.llamacpp-gpu.yml docker compose up --build -d
+services:
+  inference:
+    build:
+      context: .
+      dockerfile: inference/Dockerfile.llamacpp-gpu
+    environment:
+      INFERENCE_BACKEND: llamacpp
+      INFERENCE_MOCK: "false"
+      REQUIRE_REAL_INFERENCE: "true"
+      LLAMACPP_URL: http://llama-cpp-server:5006/v1/completions
+      SNAC_DEVICE: cuda
+      ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
+      ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q8_0.gguf}
+      ORPHEUS_MAX_TOKENS: ${ORPHEUS_MAX_TOKENS:-8192}
+      ORPHEUS_TEMPERATURE: ${ORPHEUS_TEMPERATURE:-0.6}
+      ORPHEUS_TOP_P: ${ORPHEUS_TOP_P:-0.9}
+    volumes: []
+    depends_on:
+      llama-cpp-server:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      start_period: 600s
+
+  llama-cpp-server:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    volumes:
+      - gguf_models:/models
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+    command:
+      - -m
+      - /models/${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "5006"
+      - -ngl
+      - "99"
+      - --ctx-size
+      - "8192"
+      - --parallel
+      - "1"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -q -O- http://127.0.0.1:5006/health >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 180s
+
+  model-init:
+    image: curlimages/curl:latest
+    volumes:
+      - gguf_models:/models
+    environment:
+      ORPHEUS_GGUF_MODEL: ${ORPHEUS_GGUF_MODEL:-Orpheus-3b-FT-Q8_0.gguf}
+      ORPHEUS_GGUF_HF_REPO: ${ORPHEUS_GGUF_HF_REPO:-lex-au/Orpheus-3b-FT-Q8_0.gguf}
+      HF_TOKEN: ${HF_TOKEN:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        f="/models/$${ORPHEUS_GGUF_MODEL}"
+        repo="$${ORPHEUS_GGUF_HF_REPO}"
+        if [ ! -f "$$f" ]; then
+          echo "Downloading https://huggingface.co/$${repo}/resolve/main/$${ORPHEUS_GGUF_MODEL} ..."
+          if [ -n "$${HF_TOKEN}" ]; then
+            curl -fsSL -H "Authorization: Bearer $${HF_TOKEN}" \
+              -o "$$f" "https://huggingface.co/$${repo}/resolve/main/$${ORPHEUS_GGUF_MODEL}"
+          else
+            curl -fsSL -o "$$f" "https://huggingface.co/$${repo}/resolve/main/$${ORPHEUS_GGUF_MODEL}"
+          fi
+        fi
+        ls -lh "$$f"
+
+volumes:
+  gguf_models:
