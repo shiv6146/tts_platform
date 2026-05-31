@@ -9,10 +9,12 @@ services:
       INFERENCE_MOCK: "false"
       REQUIRE_REAL_INFERENCE: "true"
       VLLM_DEVICE: cuda
-      VLLM_GPU_MEMORY_UTILIZATION: "0.85"
+      VLLM_GPU_MEMORY_UTILIZATION: ${VLLM_GPU_MEMORY_UTILIZATION:-0.75}
       SNAC_DEVICE: cuda
       ORPHEUS_MODEL_NAME: canopylabs/orpheus-3b-0.1-ft
       ORPHEUS_TOKENIZER: canopylabs/orpheus-3b-0.1-pretrained
+      HF_TOKEN: ${HF_TOKEN}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN}
     deploy:
       resources:
         reservations:

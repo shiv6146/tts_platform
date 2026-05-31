@@ -8,12 +8,16 @@
 
 ## Deploy
 
+Work in the persistent studio directory (files outside it are not saved to Drive):
+
 ```bash
+cd /teamspace/studios/this_studio
 git clone https://github.com/shiv6146/tts_platform.git
 cd tts_platform
 git submodule update --init --recursive
 cp .env.example .env
-# Ensure INFERENCE_MOCK=false and INFERENCE_BACKEND=vllm (defaults in .env.example)
+# Add HF_TOKEN=hf_... to .env (required for gated Orpheus model)
+# Ensure INFERENCE_MOCK=false and INFERENCE_BACKEND=vllm
 
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml up --build -d
 docker compose logs -f inference

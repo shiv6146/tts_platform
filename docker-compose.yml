@@ -59,7 +59,7 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -99,6 +99,8 @@ services:
       SNAC_DEVICE: ${SNAC_DEVICE:-cuda}
       GRPC_PORT: "50051"
       ORPHEUS_VENDOR: /app/vendor/Orpheus-TTS/orpheus_tts_pypi
+      HF_TOKEN: ${HF_TOKEN:-}
+      HUGGING_FACE_HUB_TOKEN: ${HF_TOKEN:-}
     volumes:
       - hf_cache:/root/.cache/huggingface
       - ./vendor/Orpheus-TTS:/app/vendor/Orpheus-TTS:ro
@@ -125,8 +127,7 @@ services:
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
-    ports:
-      - "9091:9090"
+    # No host port (9090/9091 often taken on Lightning); reachable as prometheus:9090 on compose network
     depends_on:
       - api
       - metering
@@ -141,8 +142,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports:
-      - "3000:3000"
+    # No host port; use docker compose port-forward if needed
     depends_on:
       - prometheus
 
