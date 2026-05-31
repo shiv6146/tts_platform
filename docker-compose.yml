@@ -143,7 +143,8 @@ services:
       - grafana_data:/var/lib/grafana
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    # No host port; use docker compose port-forward if needed
+    ports:
+      - "3000:3000"
     depends_on:
       - prometheus
 
