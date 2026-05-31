@@ -112,7 +112,7 @@ if [[ "$BACKEND" == "llamacpp" ]]; then
   echo "llama-cpp-server replicas: $LLAMACPP_REPLICAS"
   echo "inference gRPC replicas: $INFERENCE_REPLICAS (API round_robin via dns:///inference:50051)"
   if [[ "$LLAMACPP_REPLICAS" =~ ^[0-9]+$ && "$LLAMACPP_REPLICAS" -gt 1 ]]; then
-    UP_ARGS+=(--profile llama-multiplex)
+    export COMPOSE_PROFILES=llama-multiplex
     export LLAMACPP_URL="${LLAMACPP_URL:-http://llama-lb:5006/v1/completions}"
   else
     export LLAMACPP_URL="${LLAMACPP_URL:-http://llama-cpp-server:5006/v1/completions}"
