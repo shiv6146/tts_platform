@@ -140,6 +140,9 @@ func main() {
 	router.Group(func(pr chi.Router) {
 		pr.Use(auth.BearerMiddleware(pool))
 		pr.Get("/v1/account/rate-limit", srv.GetAccountRateLimit)
+	})
+	router.Group(func(pr chi.Router) {
+		pr.Use(auth.BearerMiddleware(pool))
 		pr.Use(rateLimitMiddleware(srv.Limiter))
 		apiRoutes := chi.NewRouter()
 		pr.Mount("/", gen.HandlerFromMux(srv, apiRoutes))
