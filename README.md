@@ -107,33 +107,33 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant API as api (Go)
-    participant VK as Valkey/groupcache
+    participant API as api Go
+    participant VK as Valkey groupcache
     participant SY as synthlimit
-    participant INF as inference (Python gRPC)
+    participant INF as inference Python gRPC
     participant L as llama-cpp-server
     participant SNAC as SNAC decoder
-    participant N as NATS
+    participant NATS as NATS
     participant M as metering
 
-    C->>API: POST /v1/tts/stream {text, voice}
-    API->>API: BearerMiddleware (resolve SK) + rate limit
-    API->>VK: HasBalance(user)  (L1→L2→PG)
-    API->>SY: Acquire() (admission, MAX_CONCURRENT_SYNTHESIS)
-    API->>INF: gRPC Synthesize(request_id, text, voice)
-    INF->>L: POST /v1/completions (prompt, stream=true)
+    C->>API: POST /v1/tts/stream text and voice
+    API->>API: Bearer auth and rate limit
+    API->>VK: HasBalance user via L1 L2 PG
+    API->>SY: Acquire admission slot
+    API->>INF: gRPC Synthesize
+    INF->>L: POST /v1/completions stream=true
     loop token stream
-      L-->>INF: <custom_token_N> ...
-      INF->>SNAC: every 7 tokens → decode 4-frame window
-      SNAC-->>INF: 2048 samples (4096 bytes PCM)
-      INF-->>API: AudioChunk{pcm, seq}
-      API-->>C: chunked PCM (flush)
-      API->>API: budget -= cost; Coalescer.AddPCM
-      API-->>N: billable.tts.v1 (~300ms batches)
+      L-->>INF: custom audio tokens
+      INF->>SNAC: decode 4-frame window per 7 tokens
+      SNAC-->>INF: PCM chunk 4096 bytes
+      INF-->>API: AudioChunk pcm and seq
+      API-->>C: chunked PCM flush
+      API->>API: budget decrement and Coalescer AddPCM
+      API-->>NATS: publish billable.tts.v1 batch
     end
-    API->>SY: Release()
-    N-->>M: deliver (queue group)
-    M->>M: debit wallet, write usage_events, DEL cache
+    API->>SY: Release slot
+    NATS-->>M: deliver via queue group
+    M->>M: debit wallet and write usage_events
 ```
 
 ### Latency metrics (TTFB)
